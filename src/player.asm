@@ -61,6 +61,7 @@ PLAYER_H  EQU 20                  ; sprite height (pixels)
 MOVE_SPEED  EQU 3                 ; pixels per frame horizontally
 JUMP_VEL    EQU 11                 ; initial upward velocity (pixels/frame)
 GRAVITY     EQU 1                 ; downward acceleration per frame
+PUSH_DIST   EQU 2                 ; push distance when players collide (pixels)
 
 ; Screen boundaries
 SCREEN_W    EQU 320
@@ -113,6 +114,13 @@ SetLeftX:
     PUSH AX
     CALL CheckLeftCollision       ; returns CF=1 if blocked
     JC   LeftBlocked
+    
+    ; Also check collision with Player2
+    POP  AX
+    PUSH AX
+    CALL CheckLeftCollisionWithPlayer2  ; returns CF=1 if would collide with P2
+    JC   LeftBlocked
+    
     POP  AX
     MOV  PlayerX, AX
     JMP  CheckRight
@@ -136,6 +144,13 @@ SetRightX:
     PUSH AX
     CALL CheckRightCollision      ; returns CF=1 if blocked
     JC   RightBlocked
+    
+    ; Also check collision with Player2
+    POP  AX
+    PUSH AX
+    CALL CheckRightCollisionWithPlayer2  ; returns CF=1 if would collide with P2
+    JC   RightBlocked
+    
     POP  AX
     MOV  PlayerX, AX
     JMP  DoneHorizontal
@@ -153,6 +168,9 @@ DoneHorizontal:
     MOV  OnGround, 0              ; no longer on ground
     MOV  DoJump, 0                ; consume the jump flag
 DoneJump:
+
+    ; Check collision with Player2 (push mechanic)
+    CALL CheckPlayerCollisionP1
 
     ; Gravity & Vertical Movement
     ; Add gravity to velocity (pulls downward = positive Y)
@@ -188,6 +206,398 @@ CheckTileBelow:
 
     RET
 UpdatePlayer ENDP
+
+; CheckPlayerCollisionP1
+; Checks if Player1 is colliding with Player2.
+; If so, separate them by pushing them apart.
+; Uses rectangle collision detection.
+CheckPlayerCollisionP1 PROC NEAR
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    PUSH SI
+
+    ; Check if bounding boxes overlap:
+    ; Rect1: PlayerX to PlayerX+PLAYER_W, PlayerY to PlayerY+PLAYER_H
+    ; Rect2: Player2X to Player2X+PLAYER_W, Player2Y to Player2Y+PLAYER_H
+    
+    ; Check horizontal overlap: Player1.left < Player2.right AND Player1.right > Player2.left
+    MOV  AX, PlayerX
+    MOV  BX, Player2X
+    ADD  BX, PLAYER_W
+    CMP  AX, BX                   ; if Player1.left >= Player2.right, no overlap
+    JGE  NoCollisionP1
+    
+    MOV  CX, PlayerX
+    ADD  CX, PLAYER_W
+    MOV  DX, Player2X
+    CMP  CX, DX                   ; if Player1.right <= Player2.left, no overlap
+    JLE  NoCollisionP1
+    
+    ; Check vertical overlap: Player1.top < Player2.bottom AND Player1.bottom > Player2.top
+    MOV  AX, PlayerY
+    MOV  BX, Player2Y
+    ADD  BX, PLAYER_H
+    CMP  AX, BX                   ; if Player1.top >= Player2.bottom, no overlap
+    JGE  NoCollisionP1
+    
+    MOV  CX, PlayerY
+    ADD  CX, PLAYER_H
+    MOV  DX, Player2Y
+    CMP  CX, DX                   ; if Player1.bottom <= Player2.top, no overlap
+    JLE  NoCollisionP1
+    
+    ; Collision detected! Push players apart
+    ; Determine direction: if Player1 is to the left of Player2, push left/right
+    MOV  AX, PlayerX
+    ADD  AX, PLAYER_W / 2         ; Player1 center X
+    MOV  BX, Player2X
+    ADD  BX, PLAYER_W / 2         ; Player2 center X
+    
+    CMP  AX, BX
+    JLE  PushLeft_P1              ; Player1 is left of Player2, push both left/right
+    
+    ; Player1 is right of Player2: push Player1 right, Player2 left
+    MOV  AX, PlayerX
+    ADD  AX, PUSH_DIST
+    MOV  BX, SCREEN_W
+    SUB  BX, PLAYER_W
+    CMP  AX, BX
+    JLE  SetPushRight_P1
+    MOV  AX, BX
+SetPushRight_P1:
+    MOV  PlayerX, AX
+    
+    MOV  AX, Player2X
+    SUB  AX, PUSH_DIST
+    CMP  AX, 0
+    JGE  SetPushLeft_P2
+    MOV  AX, 0
+SetPushLeft_P2:
+    MOV  Player2X, AX
+    JMP  NoCollisionP1
+    
+PushLeft_P1:
+    ; Player1 is left of Player2: push Player1 left, Player2 right
+    MOV  AX, PlayerX
+    SUB  AX, PUSH_DIST
+    CMP  AX, 0
+    JGE  SetPushLeft_P1_2
+    MOV  AX, 0
+SetPushLeft_P1_2:
+    MOV  PlayerX, AX
+    
+    MOV  AX, Player2X
+    ADD  AX, PUSH_DIST
+    MOV  BX, SCREEN_W
+    SUB  BX, PLAYER_W
+    CMP  AX, BX
+    JLE  SetPushRight_P2
+    MOV  AX, BX
+SetPushRight_P2:
+    MOV  Player2X, AX
+    
+NoCollisionP1:
+    POP  SI
+    POP  DX
+    POP  CX
+    POP  BX
+    POP  AX
+    RET
+CheckPlayerCollisionP1 ENDP
+
+; CheckPlayerCollisionP2
+; Checks if Player2 is colliding with Player1.
+; If so, separate them by pushing them apart.
+; Uses rectangle collision detection.
+CheckPlayerCollisionP2 PROC NEAR
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    PUSH SI
+
+    ; Check if bounding boxes overlap:
+    ; Rect1: Player2X to Player2X+PLAYER_W, Player2Y to Player2Y+PLAYER_H
+    ; Rect2: PlayerX to PlayerX+PLAYER_W, PlayerY to PlayerY+PLAYER_H
+    
+    ; Check horizontal overlap: Player2.left < Player1.right AND Player2.right > Player1.left
+    MOV  AX, Player2X
+    MOV  BX, PlayerX
+    ADD  BX, PLAYER_W
+    CMP  AX, BX                   ; if Player2.left >= Player1.right, no overlap
+    JGE  NoCollisionP2
+    
+    MOV  CX, Player2X
+    ADD  CX, PLAYER_W
+    MOV  DX, PlayerX
+    CMP  CX, DX                   ; if Player2.right <= Player1.left, no overlap
+    JLE  NoCollisionP2
+    
+    ; Check vertical overlap: Player2.top < Player1.bottom AND Player2.bottom > Player1.top
+    MOV  AX, Player2Y
+    MOV  BX, PlayerY
+    ADD  BX, PLAYER_H
+    CMP  AX, BX                   ; if Player2.top >= Player1.bottom, no overlap
+    JGE  NoCollisionP2
+    
+    MOV  CX, Player2Y
+    ADD  CX, PLAYER_H
+    MOV  DX, PlayerY
+    CMP  CX, DX                   ; if Player2.bottom <= Player1.top, no overlap
+    JLE  NoCollisionP2
+    
+    ; Collision detected! Push players apart
+    ; Determine direction: if Player2 is to the left of Player1, push left/right
+    MOV  AX, Player2X
+    ADD  AX, PLAYER_W / 2         ; Player2 center X
+    MOV  BX, PlayerX
+    ADD  BX, PLAYER_W / 2         ; Player1 center X
+    
+    CMP  AX, BX
+    JLE  PushLeft_P2              ; Player2 is left of Player1, push both left/right
+    
+    ; Player2 is right of Player1: push Player2 right, Player1 left
+    MOV  AX, Player2X
+    ADD  AX, PUSH_DIST
+    MOV  BX, SCREEN_W
+    SUB  BX, PLAYER_W
+    CMP  AX, BX
+    JLE  SetPushRight_P2_2
+    MOV  AX, BX
+SetPushRight_P2_2:
+    MOV  Player2X, AX
+    
+    MOV  AX, PlayerX
+    SUB  AX, PUSH_DIST
+    CMP  AX, 0
+    JGE  SetPushLeft_P1_3
+    MOV  AX, 0
+SetPushLeft_P1_3:
+    MOV  PlayerX, AX
+    JMP  NoCollisionP2
+    
+PushLeft_P2:
+    ; Player2 is left of Player1: push Player2 left, Player1 right
+    MOV  AX, Player2X
+    SUB  AX, PUSH_DIST
+    CMP  AX, 0
+    JGE  SetPushLeft_P2_2
+    MOV  AX, 0
+SetPushLeft_P2_2:
+    MOV  Player2X, AX
+    
+    MOV  AX, PlayerX
+    ADD  AX, PUSH_DIST
+    MOV  BX, SCREEN_W
+    SUB  BX, PLAYER_W
+    CMP  AX, BX
+    JLE  SetPushRight_P1_2
+    MOV  AX, BX
+SetPushRight_P1_2:
+    MOV  PlayerX, AX
+    
+NoCollisionP2:
+    POP  SI
+    POP  DX
+    POP  CX
+    POP  BX
+    POP  AX
+    RET
+CheckPlayerCollisionP2 ENDP
+
+; CheckLeftCollisionWithPlayer2
+; Checks if Player1 moving to proposed X (in AX) would collide with Player2
+; INPUT: AX = proposed new PlayerX
+; OUTPUT: CF=1 if would collide, CF=0 if free
+CheckLeftCollisionWithPlayer2 PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    
+    ; Check if rect at (AX, PlayerY) to (AX+PLAYER_W, PlayerY+PLAYER_H)
+    ; overlaps with Player2 at (Player2X, Player2Y) to (Player2X+PLAYER_W, Player2Y+PLAYER_H)
+    
+    ; Horizontal: AX < Player2X+PLAYER_W AND AX+PLAYER_W > Player2X
+    MOV  BX, Player2X
+    ADD  BX, PLAYER_W
+    CMP  AX, BX
+    JGE  NoColP1L
+    
+    MOV  CX, AX
+    ADD  CX, PLAYER_W
+    MOV  DX, Player2X
+    CMP  CX, DX
+    JLE  NoColP1L
+    
+    ; Vertical: PlayerY < Player2Y+PLAYER_H AND PlayerY+PLAYER_H > Player2Y
+    MOV  BX, PlayerY
+    MOV  CX, Player2Y
+    ADD  CX, PLAYER_H
+    CMP  BX, CX
+    JGE  NoColP1L
+    
+    MOV  DX, PlayerY
+    ADD  DX, PLAYER_H
+    MOV  CX, Player2Y
+    CMP  DX, CX
+    JLE  NoColP1L
+    
+    STC                           ; collision detected
+    JMP  DoneColP1L
+NoColP1L:
+    CLC                           ; no collision
+DoneColP1L:
+    POP  DX
+    POP  CX
+    POP  BX
+    RET
+CheckLeftCollisionWithPlayer2 ENDP
+
+; CheckRightCollisionWithPlayer2
+; Checks if Player1 moving to proposed X (in AX) would collide with Player2
+; INPUT: AX = proposed new PlayerX
+; OUTPUT: CF=1 if would collide, CF=0 if free
+CheckRightCollisionWithPlayer2 PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    
+    ; Check if rect at (AX, PlayerY) to (AX+PLAYER_W, PlayerY+PLAYER_H)
+    ; overlaps with Player2
+    
+    ; Horizontal: AX < Player2X+PLAYER_W AND AX+PLAYER_W > Player2X
+    MOV  BX, Player2X
+    ADD  BX, PLAYER_W
+    CMP  AX, BX
+    JGE  NoColP1R
+    
+    MOV  CX, AX
+    ADD  CX, PLAYER_W
+    MOV  DX, Player2X
+    CMP  CX, DX
+    JLE  NoColP1R
+    
+    ; Vertical: PlayerY < Player2Y+PLAYER_H AND PlayerY+PLAYER_H > Player2Y
+    MOV  BX, PlayerY
+    MOV  CX, Player2Y
+    ADD  CX, PLAYER_H
+    CMP  BX, CX
+    JGE  NoColP1R
+    
+    MOV  DX, PlayerY
+    ADD  DX, PLAYER_H
+    MOV  CX, Player2Y
+    CMP  DX, CX
+    JLE  NoColP1R
+    
+    STC                           ; collision detected
+    JMP  DoneColP1R
+NoColP1R:
+    CLC                           ; no collision
+DoneColP1R:
+    POP  DX
+    POP  CX
+    POP  BX
+    RET
+CheckRightCollisionWithPlayer2 ENDP
+
+; CheckLeftCollisionWithPlayer1
+; Checks if Player2 moving to proposed X (in AX) would collide with Player1
+; INPUT: AX = proposed new Player2X
+; OUTPUT: CF=1 if would collide, CF=0 if free
+CheckLeftCollisionWithPlayer1 PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    
+    ; Check if rect at (AX, Player2Y) to (AX+PLAYER_W, Player2Y+PLAYER_H)
+    ; overlaps with Player1
+    
+    ; Horizontal: AX < PlayerX+PLAYER_W AND AX+PLAYER_W > PlayerX
+    MOV  BX, PlayerX
+    ADD  BX, PLAYER_W
+    CMP  AX, BX
+    JGE  NoColP2L
+    
+    MOV  CX, AX
+    ADD  CX, PLAYER_W
+    MOV  DX, PlayerX
+    CMP  CX, DX
+    JLE  NoColP2L
+    
+    ; Vertical: Player2Y < PlayerY+PLAYER_H AND Player2Y+PLAYER_H > PlayerY
+    MOV  BX, Player2Y
+    MOV  CX, PlayerY
+    ADD  CX, PLAYER_H
+    CMP  BX, CX
+    JGE  NoColP2L
+    
+    MOV  DX, Player2Y
+    ADD  DX, PLAYER_H
+    MOV  CX, PlayerY
+    CMP  DX, CX
+    JLE  NoColP2L
+    
+    STC                           ; collision detected
+    JMP  DoneColP2L
+NoColP2L:
+    CLC                           ; no collision
+DoneColP2L:
+    POP  DX
+    POP  CX
+    POP  BX
+    RET
+CheckLeftCollisionWithPlayer1 ENDP
+
+; CheckRightCollisionWithPlayer1
+; Checks if Player2 moving to proposed X (in AX) would collide with Player1
+; INPUT: AX = proposed new Player2X
+; OUTPUT: CF=1 if would collide, CF=0 if free
+CheckRightCollisionWithPlayer1 PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    
+    ; Check if rect at (AX, Player2Y) to (AX+PLAYER_W, Player2Y+PLAYER_H)
+    ; overlaps with Player1
+    
+    ; Horizontal: AX < PlayerX+PLAYER_W AND AX+PLAYER_W > PlayerX
+    MOV  BX, PlayerX
+    ADD  BX, PLAYER_W
+    CMP  AX, BX
+    JGE  NoColP2R
+    
+    MOV  CX, AX
+    ADD  CX, PLAYER_W
+    MOV  DX, PlayerX
+    CMP  CX, DX
+    JLE  NoColP2R
+    
+    ; Vertical: Player2Y < PlayerY+PLAYER_H AND Player2Y+PLAYER_H > PlayerY
+    MOV  BX, Player2Y
+    MOV  CX, PlayerY
+    ADD  CX, PLAYER_H
+    CMP  BX, CX
+    JGE  NoColP2R
+    
+    MOV  DX, Player2Y
+    ADD  DX, PLAYER_H
+    MOV  CX, PlayerY
+    CMP  DX, CX
+    JLE  NoColP2R
+    
+    STC                           ; collision detected
+    JMP  DoneColP2R
+NoColP2R:
+    CLC                           ; no collision
+DoneColP2R:
+    POP  DX
+    POP  CX
+    POP  BX
+    RET
+CheckRightCollisionWithPlayer1 ENDP
 
 ; CheckGroundCollision
 ; Checks the two bottom corners of the player sprite against
@@ -460,6 +870,13 @@ SetLeftX_P2:
     PUSH AX
     CALL CheckLeftCollision_P2       ; returns CF=1 if blocked
     JC   LeftBlocked_P2
+    
+    ; Also check collision with Player1
+    POP  AX
+    PUSH AX
+    CALL CheckLeftCollisionWithPlayer1  ; returns CF=1 if would collide with P1
+    JC   LeftBlocked_P2
+    
     POP  AX
     MOV  Player2X, AX
     JMP  CheckRight_P2
@@ -483,6 +900,13 @@ SetRightX_P2:
     PUSH AX
     CALL CheckRightCollision_P2      ; returns CF=1 if blocked
     JC   RightBlocked_P2
+    
+    ; Also check collision with Player1
+    POP  AX
+    PUSH AX
+    CALL CheckRightCollisionWithPlayer1  ; returns CF=1 if would collide with P1
+    JC   RightBlocked_P2
+    
     POP  AX
     MOV  Player2X, AX
     JMP  DoneHorizontal_P2
@@ -500,6 +924,9 @@ DoneHorizontal_P2:
     MOV  OnGround2, 0              ; no longer on ground
     MOV  DoJump2, 0                ; consume the jump flag
 DoneJump_P2:
+
+    ; Check collision with Player1 (push mechanic)
+    CALL CheckPlayerCollisionP2
 
     ; Gravity & Vertical Movement
     ; Add gravity to velocity (pulls downward = positive Y)
