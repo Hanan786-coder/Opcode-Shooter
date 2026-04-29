@@ -34,6 +34,9 @@ EXTRN TILE_H       : ABS          ; map.asm  – 16
 EXTRN MoveLeft     : BYTE         ; input.asm
 EXTRN MoveRight    : BYTE         ; input.asm
 EXTRN DoJump       : BYTE         ; input.asm
+EXTRN MoveLeft2    : BYTE         ; input.asm
+EXTRN MoveRight2   : BYTE         ; input.asm
+EXTRN DoJump2      : BYTE         ; input.asm
 EXTRN VideoSeg     : WORD         ; main.asm - dynamic video segment
 
 ; Public symbols
@@ -42,6 +45,11 @@ PUBLIC UpdatePlayer
 PUBLIC DrawPlayer
 PUBLIC PlayerX                    ; other modules may read position
 PUBLIC PlayerY
+PUBLIC InitPlayer2
+PUBLIC UpdatePlayer2
+PUBLIC DrawPlayer2
+PUBLIC Player2X
+PUBLIC Player2Y
 
 .DATA
 
@@ -63,6 +71,11 @@ PlayerX     DW  80                ; current X position (pixels)
 PlayerY     DW  160               ; current Y position (pixels)
 VelocityY   DW  0                 ; vertical velocity (signed; up=negative)
 OnGround    DB  0                 ; 1 if player is standing on solid tile
+Player2X    DW  240               ; current X position (pixels)
+Player2Y    DW  160               ; current Y position (pixels)
+Velocity2Y  DW  0                 ; vertical velocity
+OnGround2   DB  0
+PLAYER2_COLOR EQU 0Ch             ; bright red
 
 ; Player sprite color (bright cyan in default palette)
 PLAYER_COLOR EQU 0Bh
@@ -414,5 +427,353 @@ DrawRowLoop:
     POP  ES
     RET
 DrawPlayer ENDP
+
+
+; --- PLAYER 2 ---
+
+InitPlayer2 PROC NEAR
+    MOV  Player2X, 240              ; start at X=80 (25% across screen)
+    MOV  Player2Y, 160             ; start near bottom, above ground
+    MOV  Velocity2Y, 0             ; no vertical movement at start
+    MOV  OnGround2, 0              ; assume falling until collision check
+    RET
+InitPlayer2 ENDP
+
+; UpdatePlayer2
+; Called once per frame. Reads input flags, moves player,
+; applies gravity, and checks collision with map tiles.
+UpdatePlayer2 PROC NEAR
+    ; Horizontal Movement
+    ; Check MoveLeft2 flag
+    CMP  MoveLeft2, 1
+    JNE  CheckRight_P2
+
+    ; Move left: subtract MOVE_SPEED from X
+    MOV  AX, Player2X
+    SUB  AX, MOVE_SPEED
+    ; Clamp to left screen edge (don't go below 0)
+    CMP  AX, 0
+    JGE  SetLeftX_P2
+    MOV  AX, 0
+SetLeftX_P2:
+    ; Check if tile to the left is solid before moving
+    PUSH AX
+    CALL CheckLeftCollision_P2       ; returns CF=1 if blocked
+    JC   LeftBlocked_P2
+    POP  AX
+    MOV  Player2X, AX
+    JMP  CheckRight_P2
+LeftBlocked_P2:
+    POP  AX                       ; discard, don't move
+
+CheckRight_P2:
+    CMP  MoveRight2, 1
+    JNE  DoneHorizontal_P2
+
+    ; Move right: add MOVE_SPEED to X
+    MOV  AX, Player2X
+    ADD  AX, MOVE_SPEED
+    ; Clamp to right screen edge
+    MOV  BX, SCREEN_W
+    SUB  BX, PLAYER_W             ; max X = screen width - sprite width
+    CMP  AX, BX
+    JLE  SetRightX_P2
+    MOV  AX, BX
+SetRightX_P2:
+    PUSH AX
+    CALL CheckRightCollision_P2      ; returns CF=1 if blocked
+    JC   RightBlocked_P2
+    POP  AX
+    MOV  Player2X, AX
+    JMP  DoneHorizontal_P2
+RightBlocked_P2:
+    POP  AX
+
+DoneHorizontal_P2:
+
+    ; Jumping
+    CMP  DoJump2, 1
+    JNE  DoneJump_P2
+    CMP  OnGround2, 1              ; can only jump if on the ground
+    JNE  DoneJump_P2
+    MOV  Velocity2Y, -JUMP_VEL    ; negative = upward in screen coords
+    MOV  OnGround2, 0              ; no longer on ground
+    MOV  DoJump2, 0                ; consume the jump flag
+DoneJump_P2:
+
+    ; Gravity & Vertical Movement
+    ; Add gravity to velocity (pulls downward = positive Y)
+    MOV  AX, Velocity2Y
+    ADD  AX, GRAVITY
+    MOV  Velocity2Y, AX
+
+    ; Apply velocity to Y position
+    MOV  AX, Player2Y
+    ADD  AX, Velocity2Y
+    MOV  Player2Y, AX
+
+    ; Floor / Ceiling Clamp
+    ; Clamp to top of screen
+    CMP  Player2Y, 0
+    JGE  CheckFloor_P2
+    MOV  Player2Y, 0
+    MOV  Velocity2Y, 0             ; hit ceiling, stop upward motion
+
+CheckFloor_P2:
+    ; Clamp to bottom of screen
+    MOV  AX, SCREEN_H
+    SUB  AX, PLAYER_H             ; max Y = screen - sprite height
+    CMP  Player2Y, AX
+    JLE  CheckTileBelow_P2
+    MOV  Player2Y, AX
+    MOV  Velocity2Y, 0
+    MOV  OnGround2, 1
+
+CheckTileBelow_P2:
+    ; Check if a map tile is directly beneath the player
+    CALL CheckGroundCollision_P2     ; sets OnGround2, adjusts Player2Y
+
+    RET
+UpdatePlayer2 ENDP
+
+; CheckGroundCollision_P2
+; Checks the two bottom corners of the player sprite against
+; the map tile grid. If solid tile found, snaps player on top.
+; Modifies: Player2Y, Velocity2Y, OnGround2
+CheckGroundCollision_P2 PROC NEAR
+    PUSH AX
+    PUSH BX
+    PUSH DX
+    PUSH SI
+
+    ; Bottom-center pixel of player = Player2Y + PLAYER_H
+    MOV  AX, Player2Y
+    ADD  AX, PLAYER_H             ; AX = bottom Y of sprite
+
+    ; Convert bottom Y to tile row: tileRow = AX / TILE_H
+    XOR  DX, DX
+    MOV  BX, TILE_H
+    DIV  BX                       ; AX = tile row, DX = remainder
+
+    ; Convert player center X to tile column
+    MOV  SI, Player2X
+    ADD  SI, PLAYER_W / 2         ; center X
+    XOR  DX, DX
+    MOV  BX, TILE_W
+    MOV  AX, SI
+    DIV  BX                       ; AX = tile column
+
+    ; Bounds check: row must be < MAP_ROWS, col < MAP_COLS
+    CMP  AX, MAP_COLS
+    JAE  NoGroundHit_P2
+    PUSH AX                       ; save column
+    MOV  AX, Player2Y
+    ADD  AX, PLAYER_H
+    XOR  DX, DX
+    MOV  BX, TILE_H
+    DIV  BX                       ; AX = row again
+    CMP  AX, MAP_ROWS
+    JAE  NoGroundHitPop_P2
+
+    ; Compute index into MapData: index = row * MAP_COLS + col
+    MOV  BX, MAP_COLS
+    MUL  BX                       ; AX = row * MAP_COLS
+    POP  SI                       ; SI = column
+    ADD  AX, SI
+    MOV  SI, AX                   ; SI = final index
+
+    ; Read tile type
+    MOV  AL, MapData[SI]
+    CMP  AL, 1
+    JNE  NoGroundHit2_P2             ; tile is empty, no collision
+
+    ; Collision! Snap player Y so feet sit on top of tile.
+    ; tileTopY = tileRow * TILE_H
+    ; We already have row in AX/DX from earlier division;
+    ; recompute for clarity:
+    MOV  AX, Player2Y
+    ADD  AX, PLAYER_H
+    XOR  DX, DX
+    MOV  BX, TILE_H
+    DIV  BX                       ; AX = row
+    MUL  BX                       ; AX = row * TILE_H  (tile top Y)
+    SUB  AX, PLAYER_H             ; player Y = tile top - sprite height
+    MOV  Player2Y, AX
+    MOV  Velocity2Y, 0
+    MOV  OnGround2, 1
+    JMP  GroundDone_P2
+
+NoGroundHitPop_P2:
+    POP  AX
+    JMP  NoGroundHit_P2
+NoGroundHit2_P2:
+NoGroundHit_P2:
+    ; No tile below – player is in the air
+    MOV  OnGround2, 0
+
+GroundDone_P2:
+    POP  SI
+    POP  DX
+    POP  BX
+    POP  AX
+    RET
+CheckGroundCollision_P2 ENDP
+
+; CheckLeftCollision_P2
+; Checks the tile to the left of the player.
+; INPUT:  AX = proposed new Player2X (after subtracting speed)
+; OUTPUT: CF=1 if blocked, CF=0 if free
+CheckLeftCollision_P2 PROC NEAR
+    PUSH BX
+    PUSH DX
+    PUSH SI
+
+    ; Left edge pixel X = AX (proposed new X)
+    ; Check tile at (AX, Player2Y + PLAYER_H/2)  [mid-height]
+    MOV  BX, AX                   ; BX = left edge X
+    MOV  DX, Player2Y
+    ADD  DX, PLAYER_H / 2         ; DX = mid-height Y
+
+    ; Convert to tile indices
+    XOR  AX, AX
+    MOV  AX, BX
+    XOR  DX, DX
+    MOV  SI, Player2Y
+    ADD  SI, PLAYER_H / 2
+
+    ; tileCol = BX / TILE_W
+    MOV  AX, BX
+    XOR  DX, DX
+    MOV  BX, TILE_W
+    DIV  BX                       ; AX = tileCol
+
+    ; tileRow = midY / TILE_H
+    MOV  BX, SI
+    PUSH AX                       ; save tileCol
+    MOV  AX, BX
+    XOR  DX, DX
+    MOV  BX, TILE_H
+    DIV  BX                       ; AX = tileRow
+    POP  BX                       ; BX = tileCol
+
+    ; index = tileRow * MAP_COLS + tileCol
+    PUSH BX
+    MOV  BX, MAP_COLS
+    MUL  BX
+    POP  BX
+    ADD  AX, BX
+    MOV  SI, AX
+
+    MOV  AL, MapData[SI]
+    CMP  AL, 1
+    JE   LeftBlk_P2
+    CLC                           ; CF=0 = free
+    JMP  LeftDone_P2
+LeftBlk_P2:
+    STC                           ; CF=1 = blocked
+LeftDone_P2:
+    POP  SI
+    POP  DX
+    POP  BX
+    RET
+CheckLeftCollision_P2 ENDP
+
+; CheckRightCollision_P2
+; Same as CheckLeftCollision_P2 but checks right edge.
+; INPUT:  AX = proposed new Player2X
+; OUTPUT: CF=1 blocked, CF=0 free
+CheckRightCollision_P2 PROC NEAR
+    PUSH BX
+    PUSH DX
+    PUSH SI
+
+    ; Right edge X = AX + PLAYER_W - 1
+    ADD  AX, PLAYER_W
+    DEC  AX
+    MOV  BX, AX                   ; BX = right edge X
+
+    MOV  SI, Player2Y
+    ADD  SI, PLAYER_H / 2
+
+    MOV  AX, BX
+    XOR  DX, DX
+    MOV  BX, TILE_W
+    DIV  BX                       ; AX = tileCol
+
+    MOV  BX, SI
+    PUSH AX
+    MOV  AX, BX
+    XOR  DX, DX
+    MOV  BX, TILE_H
+    DIV  BX                       ; AX = tileRow
+    POP  BX                       ; BX = tileCol
+
+    PUSH BX
+    MOV  BX, MAP_COLS
+    MUL  BX
+    POP  BX
+    ADD  AX, BX
+    MOV  SI, AX
+
+    MOV  AL, MapData[SI]
+    CMP  AL, 1
+    JE   RightBlk_P2
+    CLC
+    JMP  RightDone_P2
+RightBlk_P2:
+    STC
+RightDone_P2:
+    POP  SI
+    POP  DX
+    POP  BX
+    RET
+CheckRightCollision_P2 ENDP
+
+; DrawPlayer2
+; Draws the player sprite as a filled colored rectangle.
+; Uses Player2X and Player2Y to determine screen position.
+DrawPlayer2 PROC NEAR
+    PUSH ES
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    PUSH DI
+
+    MOV  AX, VideoSeg             ; Dynamic video segment
+    MOV  ES, AX
+
+    MOV  BX, Player2X              ; BX = X position
+    MOV  DX, Player2Y              ; DX = Y position
+
+    MOV  CX, PLAYER_H             ; draw PLAYER_H rows
+
+DrawRowLoop_P2:
+    PUSH DX                       ; SAVE DX
+    ; Offset in video memory = DX * 320 + BX
+    MOV  AX, DX
+    MOV  DI, 320
+    MUL  DI                       ; AX = DX * 320
+    ADD  AX, BX                   ; AX += X
+    MOV  DI, AX                   ; ES:DI = pixel row start
+
+    ; Fill PLAYER_W pixels with player color
+    PUSH CX
+    MOV  CX, PLAYER_W
+    MOV  AL, PLAYER2_COLOR         ; bright cyan
+    REP  STOSB
+    POP  CX
+
+    POP  DX                       ; RESTORE DX
+    INC  DX                       ; next pixel row
+    LOOP DrawRowLoop_P2
+
+    POP  DI
+    POP  CX
+    POP  BX
+    POP  AX
+    POP  ES
+    RET
+DrawPlayer2 ENDP
+
 
 END
