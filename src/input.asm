@@ -55,8 +55,6 @@ OldInt9Seg  DW  0
 KeyState    DB  128 DUP (0)
 
 .CODE
-
-; ---------------------------------------------------------------
 ; KbdHandler - INT 9h ISR
 ; Reads scan code from port 60h, updates KeyState[], then chains
 ; to the original BIOS INT 9h so the BIOS buffer still functions.
@@ -65,7 +63,6 @@ KbdHandler PROC FAR
     PUSH AX
     PUSH BX
     PUSH DS
-
     MOV  AX, @DATA
     MOV  DS, AX
 
