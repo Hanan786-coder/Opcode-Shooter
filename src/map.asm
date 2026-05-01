@@ -20,7 +20,9 @@
 ; VIDEO MEMORY:
 ;   Segment A000h, offset = row*320 + col
 
+
 .MODEL SMALL
+
 
 ; Externals
 EXTRN GameRunning : BYTE          ; from main.asm (not used here
@@ -28,6 +30,7 @@ EXTRN GameRunning : BYTE          ; from main.asm (not used here
 EXTRN VideoSeg : WORD             ; Dynamic video segment for double buffering
 
 ; Public symbols
+
 PUBLIC InitMap
 PUBLIC DrawMap
 PUBLIC MapData                    ; player.asm needs this for collision
