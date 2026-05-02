@@ -56,6 +56,12 @@ PUBLIC UpdatePlayer2
 PUBLIC DrawPlayer2
 PUBLIC Player2X
 PUBLIC Player2Y
+PUBLIC PlayerHealth
+PUBLIC Player2Health
+PUBLIC P1Shield
+PUBLIC P2Shield
+PUBLIC P1Ultra
+PUBLIC P2Ultra
 
 .DATA
 
@@ -82,6 +88,14 @@ Player2X    DW  240               ; current X position (pixels)
 Player2Y    DW  160               ; current Y position (pixels)
 Velocity2Y  DW  0                 ; vertical velocity
 OnGround2   DB  0
+
+PlayerHealth DW 10                ; player 1 health
+Player2Health DW 10               ; player 2 health
+
+P1Shield DB 0
+P2Shield DB 0
+P1Ultra DB 0
+P2Ultra DB 0
 
 ; ---------------------------------------------------------------
 ; Sprite colour palette (VGA 256-colour index values)
@@ -274,18 +288,16 @@ RightBlocked:
 
 DoneHorizontal:
 
-    ; Update facing direction based on movement
-    CMP  MoveLeft, 1
-    JNE  CheckRight_Facing
-    ; Moving left - update PlayerFacing
-    MOV  PlayerFacing, -1
-    JMP  DoneFacing
-    
-CheckRight_Facing:
-    CMP  MoveRight, 1
-    JNE  DoneFacing
-    ; Moving right
+    ; Update facing each frame based on X positions
+    MOV  AX, PlayerX
+    CMP  AX, Player2X
+    JG   P1RightFace
+    ; Player1 is left of Player2 -> face right
     MOV  PlayerFacing, 1
+    JMP  DoneFacing
+P1RightFace:
+    ; Player1 is right of Player2 -> face left
+    MOV  PlayerFacing, -1
     
 DoneFacing:
     ; Handle fire button (independent of jump)
@@ -976,6 +988,49 @@ DP1_Skip:
     INC  DX                       ; next screen row
     LOOP DP1_RowLoop
 
+    ; --- Draw Gun for P1 ---
+    MOV  DX, PlayerY
+    ADD  DX, PLAYER_H / 2 - 3       ; DX = Gun Y
+    
+    MOV  AX, PlayerFacing
+    CMP  AX, 1
+    JNE  P1GunLeft
+    
+    ; Gun Right
+    MOV  CX, PlayerX
+    ADD  CX, PLAYER_W - 2         ; CX = Gun X
+    JMP  P1DrawGun
+
+P1GunLeft:
+    MOV  CX, PlayerX
+    SUB  CX, 4                    ; CX = Gun X
+
+P1DrawGun:
+    ; Draw a 6x2 rectangle at (CX, DX)
+    ; Row 1
+    MOV  AX, DX
+    MOV  BX, 320
+    MUL  BX
+    ADD  AX, CX
+    MOV  DI, AX
+    
+    MOV  AL, 08h                  ; Dark gray
+    MOV  ES:[DI], AL
+    MOV  ES:[DI+1], AL
+    MOV  ES:[DI+2], AL
+    MOV  ES:[DI+3], AL
+    MOV  ES:[DI+4], AL
+    MOV  ES:[DI+5], AL
+    
+    ; Row 2
+    ADD  DI, 320
+    MOV  ES:[DI], AL
+    MOV  ES:[DI+1], AL
+    MOV  ES:[DI+2], AL
+    MOV  ES:[DI+3], AL
+    MOV  ES:[DI+4], AL
+    MOV  ES:[DI+5], AL
+
     POP  DI
     POP  SI
     POP  DX
@@ -1063,18 +1118,16 @@ RightBlocked_P2:
 
 DoneHorizontal_P2:
 
-    ; Update facing direction based on movement
-    CMP  MoveLeft2, 1
-    JNE  CheckRight_Facing_P2
-    ; Moving left - update Player2Facing
-    MOV  Player2Facing, -1
-    JMP  DoneFacing_P2
-    
-CheckRight_Facing_P2:
-    CMP  MoveRight2, 1
-    JNE  DoneFacing_P2
-    ; Moving right
+    ; Update facing each frame based on X positions
+    MOV  AX, Player2X
+    CMP  AX, PlayerX
+    JG   P2RightFace
+    ; Player2 is left of Player1 -> face right
     MOV  Player2Facing, 1
+    JMP  DoneFacing_P2
+P2RightFace:
+    ; Player2 is right of Player1 -> face left
+    MOV  Player2Facing, -1
     
 DoneFacing_P2:
     ; Handle fire button (independent of jump)
@@ -1369,6 +1422,49 @@ DP2_Skip:
     POP  DX
     INC  DX
     LOOP DP2_RowLoop
+
+    ; --- Draw Gun for P2 ---
+    MOV  DX, Player2Y
+    ADD  DX, PLAYER_H / 2 - 3        ; DX = Gun Y
+    
+    MOV  AX, Player2Facing
+    CMP  AX, 1
+    JNE  P2GunLeft
+    
+    ; Gun Right
+    MOV  CX, Player2X
+    ADD  CX, PLAYER_W - 2         ; CX = Gun X
+    JMP  P2DrawGun
+
+P2GunLeft:
+    MOV  CX, Player2X
+    SUB  CX, 4                    ; CX = Gun X
+
+P2DrawGun:
+    ; Draw a 6x2 rectangle at (CX, DX)
+    ; Row 1
+    MOV  AX, DX
+    MOV  BX, 320
+    MUL  BX
+    ADD  AX, CX
+    MOV  DI, AX
+    
+    MOV  AL, 08h                  ; Dark gray
+    MOV  ES:[DI], AL
+    MOV  ES:[DI+1], AL
+    MOV  ES:[DI+2], AL
+    MOV  ES:[DI+3], AL
+    MOV  ES:[DI+4], AL
+    MOV  ES:[DI+5], AL
+    
+    ; Row 2
+    ADD  DI, 320
+    MOV  ES:[DI], AL
+    MOV  ES:[DI+1], AL
+    MOV  ES:[DI+2], AL
+    MOV  ES:[DI+3], AL
+    MOV  ES:[DI+4], AL
+    MOV  ES:[DI+5], AL
 
     POP  DI
     POP  SI
