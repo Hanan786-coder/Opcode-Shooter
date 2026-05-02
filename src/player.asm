@@ -374,9 +374,7 @@ CheckPlayerCollisionP1 PROC NEAR
     MOV  BX, Player2X
     ADD  BX, PLAYER_W
     CMP  AX, BX                   ; if Player1.left >= Player2.right, no overlap
-    JL skip1         ; If Less Than, we skip the jump
-    JMP NoCollisionP1 ; Use JMP because it can reach much further
-    skip1:           ; The rest of your code continues here
+    JGE  NoCollisionP1
     
     MOV  CX, PlayerX
     ADD  CX, PLAYER_W
@@ -476,9 +474,8 @@ CheckPlayerCollisionP2 PROC NEAR
     MOV  BX, PlayerX
     ADD  BX, PLAYER_W
     CMP  AX, BX                   ; if Player2.left >= Player1.right, no overlap
-    JL skip2         ; If Less Than, we skip the jump
-    JMP NoCollisionP2 ; Use JMP to reach the distant label
-    skip2:           ; The rest of your code continues here    
+    JGE  NoCollisionP2
+    
     MOV  CX, Player2X
     ADD  CX, PLAYER_W
     MOV  DX, PlayerX

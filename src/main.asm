@@ -25,12 +25,12 @@
 ;   link main.obj+map.obj+player.obj+input.obj+bullets.obj, game.exe;
 
 .MODEL SMALL
+.286                              ; Enable 286 instructions (shift-by-immediate, etc.)
 .STACK 200h                       ; 512-byte stack
 
 ; Externals from other team members' files
 EXTRN InitMap    : NEAR           ; map.asm  – draws the static map
 EXTRN DrawMap    : NEAR           ; map.asm  – redraws map each frame
-EXTRN SelectMap  : NEAR           ; map.asm  – graphical map selector
 EXTRN InitPlayer : NEAR           ; player.asm – sets player start pos
 EXTRN UpdatePlayer : NEAR         ; player.asm – move/gravity logic
 EXTRN DrawPlayer : NEAR           ; player.asm – renders player sprite
@@ -46,6 +46,7 @@ EXTRN DrawBullets : NEAR          ; bullets.asm – render bullets
 EXTRN InitPowerups : NEAR         ; powerups.asm
 EXTRN UpdatePowerups : NEAR       ; powerups.asm
 EXTRN DrawPowerups : NEAR         ; powerups.asm
+EXTRN DrawPowerupUI : NEAR        ; powerups.asm
 EXTRN PlayerHealth : WORD         ; player.asm
 EXTRN Player2Health : WORD        ; player.asm
 EXTRN P1Shield : BYTE             ; player.asm
@@ -75,12 +76,23 @@ WelcomeMsg  DB 'Starting game...', 0Dh, 0Ah, '$'
 P1WinMsg    DB 'Player 1 Wins!', 0Dh, 0Ah, '$'
 P2WinMsg    DB 'Player 2 Wins!', 0Dh, 0Ah, '$'
 
+; 3x5 pixel font for digits 0-3 and dash
+; Each digit = 15 bytes (5 rows of 3 pixels)
 Fonts LABEL BYTE
     DB 1,1,1, 1,0,1, 1,0,1, 1,0,1, 1,1,1 ; 0
     DB 0,1,0, 1,1,0, 0,1,0, 0,1,0, 1,1,1 ; 1
     DB 1,1,1, 0,0,1, 1,1,1, 1,0,0, 1,1,1 ; 2
     DB 1,1,1, 0,0,1, 1,1,1, 0,0,1, 1,1,1 ; 3
 FontDash DB 0,0,0, 0,0,0, 1,1,1, 0,0,0, 0,0,0
+
+; --- UI Layout Constants ---
+; HUD strip:  Y = 0..15  (16 rows)
+; Separator:  Y = 15
+; P1 bar:     X = 5..124,  10 segments each 11px wide + 1px gap
+; P2 bar:     X = 196..315, same mirrored
+; Score area: X = 140..179, Y = 3..8  (center of HUD)
+; P1 icon:    X = 128..136, Y = 3 (just left of score)
+; P2 icon:    X = 183..191, Y = 3 (just right of score)
 
 .CODE
 
@@ -105,9 +117,6 @@ MAIN PROC FAR
     ; Video memory starts at A000:0000
     CALL SetVideoMode13h
 
-    ; Let player select a map (graphical selector)
-    CALL SelectMap
-
     ; Initialize map data & draw background
     CALL InitMap
 
@@ -128,9 +137,8 @@ MAIN PROC FAR
     ; Loop: read input -> update state -> draw frame
 GameLoop:
     CMP  GameRunning, 0
-    jne SkipExit          ; if GameRunning != 0, skip the jump
-        jmp ExitGame          ; if GameRunning == 0, jump to ExitGame
-    SkipExit:                 ; the rest of your loop continues here
+    JE   ExitGame                 ; if GameRunning=0, quit
+
     ; 1) Read keyboard input (updates player direction flags)
     CALL ReadInput
 
@@ -176,6 +184,7 @@ DrawScene:
     CALL DrawBullets
     CALL DrawPowerups
     CALL DrawHealthbars
+    CALL DrawPowerupUI
     CALL DrawScore
 
     ; 4) Wait for VSync before copying to screen (prevent tearing)
@@ -272,110 +281,221 @@ WaitVSyncStart:
     RET
 FramePause ENDP
 
+; ---------------------------------------------------------------
 ; DrawHealthbars
-; Renders health UI at the top of the screen
+; Draws the full HUD strip at the top of the screen (Y=0..15).
+;   - Black background (Y=0..14)
+;   - Dark-gray separator line (Y=15)
+;   - P1 bar: 10 segments, X=5..124  (seg width=11, gap=1)
+;   - P2 bar: 10 segments, X=196..315 (mirrors P1, depletes right->left)
+;   - Segment colors: green(02h) hp>=7, yellow(0Eh) hp>=4, red(04h) hp<4
+;   - Empty segment: dark-gray (08h)
+; ---------------------------------------------------------------
 DrawHealthbars PROC NEAR
     PUSH AX
     PUSH BX
     PUSH CX
     PUSH DX
+    PUSH SI
     PUSH DI
     PUSH ES
-    
+
     MOV  AX, VideoSeg
     MOV  ES, AX
-    
-    ; --- Player 1 Outline ---
-    MOV DX, 4
-    MOV CX, 6
-P1OutRow:
-    PUSH CX
-    MOV AX, DX
-    MOV CX, 320
-    MUL CX
-    ADD AX, 9
-    MOV DI, AX
-    MOV CX, 42
-    MOV AL, 08h ; Dark gray
-    REP STOSB
-    POP CX
-    INC DX
-    LOOP P1OutRow
 
-    ; --- Player 1 Healthbar (Cyan 0Bh) ---
-    ; X = 10, Y = 5. Height = 4, Width = PlayerHealth * 4
-    MOV  DX, 5
+    ; === Clear HUD strip Y=0..14 to black ===
+    XOR  DI, DI            ; offset 0 = (Y=0, X=0)
+    MOV  CX, 320 * 15      ; 15 rows * 320 pixels
+    MOV  AL, 00h
+    REP  STOSB
+
+    ; === Separator line Y=15 in dark-gray (08h) ===
+    ; DI is now at offset 320*15 = 4800
+    MOV  CX, 320
+    MOV  AL, 08h
+    REP  STOSB
+
+    ; === Draw P1 border box  X=4..125, Y=1..13 (dark gray 08h) ===
+    ; Top edge Y=1
+    MOV  DX, 1
+    MOV  AX, 4
+    CALL CalcDI
+    MOV  CX, 122
+    MOV  AL, 08h
+    REP  STOSB
+    ; Bottom edge Y=13
+    MOV  DX, 13
+    MOV  AX, 4
+    CALL CalcDI
+    MOV  CX, 122
+    MOV  AL, 08h
+    REP  STOSB
+    ; Left/right vertical edges Y=1..13
+    MOV  DX, 1
+    MOV  CX, 13
+HB_P1Vert:
+    PUSH CX
+    MOV  AX, 4
+    CALL CalcDI
+    MOV  AL, 08h
+    STOSB
+    MOV  AX, 125
+    CALL CalcDI
+    MOV  AL, 08h
+    STOSB
+    INC  DX
+    POP  CX
+    LOOP HB_P1Vert
+
+    ; === Draw P2 border box  X=195..316, Y=1..13 ===
+    MOV  DX, 1
+    MOV  AX, 195
+    CALL CalcDI
+    MOV  CX, 122
+    MOV  AL, 08h
+    REP  STOSB
+    MOV  DX, 13
+    MOV  AX, 195
+    CALL CalcDI
+    MOV  CX, 122
+    MOV  AL, 08h
+    REP  STOSB
+    MOV  DX, 1
+    MOV  CX, 13
+HB_P2Vert:
+    PUSH CX
+    MOV  AX, 195
+    CALL CalcDI
+    MOV  AL, 08h
+    STOSB
+    MOV  AX, 316
+    CALL CalcDI
+    MOV  AL, 08h
+    STOSB
+    INC  DX
+    POP  CX
+    LOOP HB_P2Vert
+
+    ; ===================================================
+    ; P1 HEALTH BAR  (X=5, 10 segments of 11px wide, 1px gap)
+    ; BP = segment X,  SI = segment index 1..10
+    ; BX = health,     AH = fill color
+    ; ===================================================
+    PUSH BP
     MOV  BX, PlayerHealth
-    CMP  BX, 0
-    JLE  DrawP2Health    ; if dead, no bar
-    SHL  BX, 1           ; BX = health * 2
-    SHL  BX, 1           ; BX = health * 4
-    
-    MOV  CX, 4           ; 4 rows
-P1HRow:
+
+    MOV  AL, 02h
+    CMP  BX, 7
+    JGE  HB_P1Col
+    MOV  AL, 0Eh
+    CMP  BX, 4
+    JGE  HB_P1Col
+    MOV  AL, 04h
+HB_P1Col:
+    MOV  AH, AL
+
+    MOV  SI, 1
+    MOV  BP, 5              ; BP = segment X (safe from CalcDI)
+HB_P1Seg:
+    CMP  SI, 11
+    JAE  HB_P1Done
+
+    MOV  AL, 08h
+    CMP  SI, BX
+    JA   HB_P1Draw
+    MOV  AL, AH
+HB_P1Draw:
+    PUSH BP
+    PUSH SI
+    PUSH BX
+    PUSH AX
+
+    MOV  BL, AL
+    MOV  DX, 2
+    MOV  CX, 9
+HB_P1Row:
     PUSH CX
-    MOV  AX, DX
-    MOV  CX, 320
-    MUL  CX
-    ADD  AX, 10          ; X = 10
-    MOV  DI, AX
-    
-    MOV  CX, BX          ; Width
-    MOV  AL, 0Bh         ; Cyan
+    MOV  AX, BP
+    CALL CalcDI
+    MOV  CX, 11
+    MOV  AL, BL
     REP  STOSB
-    
-    POP  CX
     INC  DX
-    LOOP P1HRow
+    POP  CX
+    LOOP HB_P1Row
 
-DrawP2Health:
-    ; --- Player 2 Outline ---
-    MOV DX, 4
-    MOV CX, 6
-P2OutRow:
-    PUSH CX
-    MOV AX, DX
-    MOV CX, 320
-    MUL CX
-    ADD AX, 269
-    MOV DI, AX
-    MOV CX, 42
-    MOV AL, 08h
-    REP STOSB
-    POP CX
-    INC DX
-    LOOP P2OutRow
+    POP  AX
+    POP  BX
+    POP  SI
+    POP  BP
 
-    ; --- Player 2 Healthbar (Red 0Ch) ---
-    ; X = 310 - width, Y = 5. Height = 4, Width = Player2Health * 4
-    MOV  DX, 5
+    ADD  BP, 12
+    INC  SI
+    JMP  HB_P1Seg
+HB_P1Done:
+    POP  BP
+
+    ; ===================================================
+    ; P2 HEALTH BAR  (depletes right-to-left, mirror of P1)
+    ; Rightmost seg at X=304, each seg 11px, step left by 12
+    ; ===================================================
+    PUSH BP
     MOV  BX, Player2Health
-    CMP  BX, 0
-    JLE  HealthDone
-    SHL  BX, 1           ; BX = health * 2
-    SHL  BX, 1           ; BX = health * 4
-    
-    MOV  CX, 4           ; 4 rows
-P2HRow:
-    PUSH CX
-    MOV  AX, DX
-    MOV  CX, 320
-    MUL  CX
-    ADD  AX, 310
-    SUB  AX, BX          ; X = 310 - width
-    MOV  DI, AX
-    
-    MOV  CX, BX          ; Width
-    MOV  AL, 0Ch         ; Red
-    REP  STOSB
-    
-    POP  CX
-    INC  DX
-    LOOP P2HRow
 
-HealthDone:
+    MOV  AL, 02h
+    CMP  BX, 7
+    JGE  HB_P2Col
+    MOV  AL, 0Eh
+    CMP  BX, 4
+    JGE  HB_P2Col
+    MOV  AL, 04h
+HB_P2Col:
+    MOV  AH, AL
+
+    MOV  SI, 1
+    MOV  BP, 304
+HB_P2Seg:
+    CMP  SI, 11
+    JAE  HB_P2Done
+
+    MOV  AL, 08h
+    CMP  SI, BX
+    JA   HB_P2Draw
+    MOV  AL, AH
+HB_P2Draw:
+    PUSH BP
+    PUSH SI
+    PUSH BX
+    PUSH AX
+
+    MOV  BL, AL
+    MOV  DX, 2
+    MOV  CX, 9
+HB_P2Row:
+    PUSH CX
+    MOV  AX, BP
+    CALL CalcDI
+    MOV  CX, 11
+    MOV  AL, BL
+    REP  STOSB
+    INC  DX
+    POP  CX
+    LOOP HB_P2Row
+
+    POP  AX
+    POP  BX
+    POP  SI
+    POP  BP
+
+    SUB  BP, 12
+    INC  SI
+    JMP  HB_P2Seg
+HB_P2Done:
+    POP  BP
+
     POP  ES
     POP  DI
+    POP  SI
     POP  DX
     POP  CX
     POP  BX
@@ -397,6 +517,13 @@ ResetRound PROC NEAR
     RET
 ResetRound ENDP
 
+; ---------------------------------------------------------------
+; DrawChar
+; Draws a 3x5 pixel font character.
+; Input: AX=X, DX=Y, BL=color, SI=pointer to 15-byte font data
+; ES must already point to VideoSeg.
+; Clobbers: CX, DI (ES preserved, AX/DX/SI/BL preserved via stack)
+; ---------------------------------------------------------------
 DrawChar PROC NEAR
     PUSH AX
     PUSH BX
@@ -405,87 +532,155 @@ DrawChar PROC NEAR
     PUSH DI
     PUSH SI
 
-    MOV CX, 5
-CharRowLoop:
+    MOV  CX, 5              ; 5 rows
+DC_RowLoop:
     PUSH CX
-    PUSH AX
-    PUSH DX
+    PUSH AX                 ; save X
+    CALL CalcDI
+    POP  AX                 ; restore X
 
-    MOV CX, 320
-    XCHG AX, DX
-    MUL CX
-    ADD AX, DX 
-    MOV DI, AX
+    ; Draw 3 pixels of this row
+    MOV  CX, 3
+DC_ColLoop:
+    MOV  AL, DS:[SI]
+    INC  SI
+    CMP  AL, 1
+    JNE  DC_Skip
+    MOV  ES:[DI], BL
+DC_Skip:
+    INC  DI
+    LOOP DC_ColLoop
 
-    MOV CX, 3
-CharColLoop:
-    MOV AL, DS:[SI]
-    INC SI
-    CMP AL, 1
-    JNE CharSkip
-    MOV ES:[DI], BL
-CharSkip:
-    INC DI
-    LOOP CharColLoop
+    INC  DX                 ; next row Y
+    POP  CX
+    LOOP DC_RowLoop
 
-    POP DX
-    POP AX
-    POP CX
-    INC DX
-    LOOP CharRowLoop
-
-    POP SI
-    POP DI
-    POP DX
-    POP CX
-    POP BX
-    POP AX
+    POP  SI
+    POP  DI
+    POP  DX
+    POP  CX
+    POP  BX
+    POP  AX
     RET
 DrawChar ENDP
 
+; ---------------------------------------------------------------
+; DrawScore
+; Renders  "P1score - P2score"  centered in the HUD (Y=4..8).
+; Score digits are 3x5 pixels, drawn at:
+;   P1 digit: X=147, Y=4  in cyan (0Bh)
+;   dash:     X=152, Y=4  in white (0Fh)
+;   P2 digit: X=157, Y=4  in red (0Ch)
+; ---------------------------------------------------------------
 DrawScore PROC NEAR
     PUSH AX
     PUSH BX
+    PUSH CX
     PUSH DX
     PUSH SI
+    PUSH DI
+    PUSH ES
+
+    MOV  AX, VideoSeg
+    MOV  ES, AX
+
+    ; --- P1 Score Lines (Fills Top -> Down) ---
+    MOV  SI, 1          ; Block index 1..3
+    MOV  BX, P1Score    ; BX = current score
+    MOV  DX, 3          ; *** START AT TOP (Y=3) ***
+DS_P1Loop:
+    CMP  SI, 4
+    JAE  DS_P1Done
+
+    MOV  AL, 08h        ; Default: EMPTY color (dark gray)
+    CMP  SI, BX
+    JA   DS_P1Draw      ; If index > score, keep gray
+    MOV  AL, 0Bh        ; Otherwise: FILLED color (cyan)
+DS_P1Draw:
+    PUSH DX             ; Save current Y
+    PUSH SI
+    MOV  SI, 2          ; Height (2 rows per line)
+DS_P1Row:
+    PUSH SI
+    PUSH AX             ; *** SAVE COLOR ***
+    MOV  AX, 142        ; X coordinate
+    CALL CalcDI
+    POP  AX             ; *** RESTORE COLOR ***
+    MOV  CX, 12         ; Width
+    REP  STOSB
+    POP  SI
+    INC  DX             ; Next row
+    DEC  SI
+    JNZ  DS_P1Row
     
-    MOV AX, VideoSeg
-    MOV ES, AX
+    POP  SI
+    POP  DX
+    ADD  DX, 4          ; *** MOVE DOWN FOR NEXT POINT ***
+    INC  SI
+    JMP  DS_P1Loop
+DS_P1Done:
 
-    ; P1 Score (X = 148, Y = 5)
-    MOV AX, P1Score
-    MOV BX, 15
-    MUL BX
-    LEA SI, Fonts
-    ADD SI, AX
-    MOV AX, 148
-    MOV DX, 5
-    MOV BL, 0Fh ; White
-    CALL DrawChar
+    ; --- P2 Score Lines (Fills Top -> Down) ---
+    MOV  SI, 1
+    MOV  BX, P2Score
+    MOV  DX, 3          ; *** START AT TOP (Y=3) ***
+DS_P2Loop:
+    CMP  SI, 4
+    JAE  DS_P2Done
 
-    ; Dash (X = 154, Y = 5)
-    LEA SI, FontDash
-    MOV AX, 154
-    MOV DX, 5
-    MOV BL, 0Fh
-    CALL DrawChar
+    MOV  AL, 08h
+    CMP  SI, BX
+    JA   DS_P2Draw
+    MOV  AL, 0Ch        ; FILLED color (red)
+DS_P2Draw:
+    PUSH DX
+    PUSH SI
+    MOV  SI, 2
+DS_P2Row:
+    PUSH SI
+    PUSH AX             ; *** SAVE COLOR ***
+    MOV  AX, 166        ; X coordinate
+    CALL CalcDI
+    POP  AX             ; *** RESTORE COLOR ***
+    MOV  CX, 12
+    REP  STOSB
+    POP  SI
+    INC  DX
+    DEC  SI
+    JNZ  DS_P2Row
 
-    ; P2 Score (X = 160, Y = 5)
-    MOV AX, P2Score
-    MOV BX, 15
-    MUL BX
-    LEA SI, Fonts
-    ADD SI, AX
-    MOV AX, 160
-    MOV DX, 5
-    MOV BL, 0Fh
-    CALL DrawChar
+    POP  SI
+    POP  DX
+    ADD  DX, 4          ; *** MOVE DOWN FOR NEXT POINT ***
+    INC  SI
+    JMP  DS_P2Loop
+DS_P2Done:
 
-    POP SI
-    POP DX
-    POP BX
-    POP AX
+    POP  ES
+    POP  DI
+    POP  SI
+    POP  DX
+    POP  CX
+    POP  BX
+    POP  AX
     RET
 DrawScore ENDP
+
+; -----------------------------------------------------
+; CalcDI
+; Helper to compute offset without using MUL (which clobbers DX/AX)
+; Input:  DX = Y, AX = X
+; Output: DI = (Y * 320) + X
+; -----------------------------------------------------
+CalcDI PROC NEAR
+    PUSH DX
+    MOV  DI, DX
+    SHL  DI, 8      ; DI = Y * 256
+    SHL  DX, 6      ; DX = Y * 64
+    ADD  DI, DX     ; DI = Y * 320
+    ADD  DI, AX     ; DI = Y * 320 + X
+    POP  DX
+    RET
+CalcDI ENDP
 
 END MAIN                          ; tells assembler where execution begins
