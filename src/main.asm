@@ -30,6 +30,7 @@
 ; Externals from other team members' files
 EXTRN InitMap    : NEAR           ; map.asm  – draws the static map
 EXTRN DrawMap    : NEAR           ; map.asm  – redraws map each frame
+EXTRN SelectMap  : NEAR           ; map.asm  – graphical map selector
 EXTRN InitPlayer : NEAR           ; player.asm – sets player start pos
 EXTRN UpdatePlayer : NEAR         ; player.asm – move/gravity logic
 EXTRN DrawPlayer : NEAR           ; player.asm – renders player sprite
@@ -103,6 +104,9 @@ MAIN PROC FAR
     ; Mode 13h: 320x200 pixels, 256 colors
     ; Video memory starts at A000:0000
     CALL SetVideoMode13h
+
+    ; Let player select a map (graphical selector)
+    CALL SelectMap
 
     ; Initialize map data & draw background
     CALL InitMap
