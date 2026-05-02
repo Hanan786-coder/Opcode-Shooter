@@ -37,7 +37,13 @@ EXTRN DoJump       : BYTE         ; input.asm
 EXTRN MoveLeft2    : BYTE         ; input.asm
 EXTRN MoveRight2   : BYTE         ; input.asm
 EXTRN DoJump2      : BYTE         ; input.asm
+EXTRN FirePlayer1  : BYTE         ; input.asm
+EXTRN FirePlayer2  : BYTE         ; input.asm
 EXTRN VideoSeg     : WORD         ; main.asm - dynamic video segment
+EXTRN FireBulletPlayer1 : NEAR    ; bullets.asm
+EXTRN FireBulletPlayer2 : NEAR    ; bullets.asm
+EXTRN PlayerFacing : WORD         ; bullets.asm
+EXTRN Player2Facing : WORD        ; bullets.asm
 
 ; Public symbols
 PUBLIC InitPlayer
@@ -76,10 +82,119 @@ Player2X    DW  240               ; current X position (pixels)
 Player2Y    DW  160               ; current Y position (pixels)
 Velocity2Y  DW  0                 ; vertical velocity
 OnGround2   DB  0
-PLAYER2_COLOR EQU 0Ch             ; bright red
 
-; Player sprite color (bright cyan in default palette)
-PLAYER_COLOR EQU 0Bh
+; ---------------------------------------------------------------
+; Sprite colour palette (VGA 256-colour index values)
+; BGC = background / transparent colour – pixels with this value
+;       are skipped so the sky shows through the sprite outline.
+; ---------------------------------------------------------------
+BGC         EQU 0Bh   ; light cyan  – transparent
+SK          EQU 07h   ; light gray  – skin
+BLK         EQU 00h   ; black       – outlines / eyes
+DGR         EQU 08h   ; dark gray   – shadow / boots
+YEL         EQU 0Eh   ; yellow      – eyes / trim
+BRN         EQU 06h   ; brown       – belt / boots
+
+; Player 1 – Blue Knight palette
+P1H         EQU 09h   ; light blue  – helmet / armour highlight
+P1B         EQU 01h   ; blue        – armour body
+P1L         EQU 03h   ; dark cyan   – legs
+
+; Player 2 – Red Knight palette
+P2H         EQU 0Ch   ; light red   – helmet / armour highlight
+P2B         EQU 04h   ; red         – armour body
+P2L         EQU 0Ch   ; light red   – legs
+
+; ---------------------------------------------------------------
+; Player 1 sprite – 14 wide x 20 tall (blue knight, faces right)
+; Each DB row = exactly 14 colour bytes.
+; ---------------------------------------------------------------
+P1Sprite  LABEL BYTE
+  ; row  0 – top of helmet
+  DB BGC,BGC,BLK,P1H,P1H,P1H,P1H,P1H,P1H,P1H,BLK,BGC,BGC,BGC
+  ; row  1 – helmet visor band
+  DB BGC,BLK,P1B,P1B,P1B,P1B,P1B,P1B,P1B,P1B,P1B,BLK,BGC,BGC
+  ; row  2 – upper face / visor slit
+  DB BGC,BLK,P1H,YEL,BLK,P1H,P1H,P1H,P1H,BLK,YEL,P1H,BLK,BGC
+  ; row  3 – chin guard
+  DB BGC,BLK,P1B,P1B,P1B,P1B,P1B,P1B,P1B,P1B,P1B,P1B,BLK,BGC
+  ; row  4 – neck
+  DB BGC,BGC,BGC,BLK,SK, SK, SK, SK, SK, SK, BLK,BGC,BGC,BGC
+  ; row  5 – shoulder pad tops
+  DB BLK,P1H,P1H,BLK,P1B,P1B,P1B,P1B,P1B,P1B,BLK,P1H,P1H,BLK
+  ; row  6 – shoulders / chest top
+  DB P1B,P1H,P1H,P1B,P1B,P1H,P1H,P1H,P1H,P1B,P1B,P1H,P1H,P1B
+  ; row  7 – chest
+  DB P1B,P1B,P1B,P1B,P1H,P1H,P1H,P1H,P1H,P1H,P1B,P1B,P1B,P1B
+  ; row  8 – chest mid (cross emblem)
+  DB P1B,P1B,P1B,BLK,YEL,YEL,YEL,YEL,YEL,YEL,BLK,P1B,P1B,P1B
+  ; row  9 – belly / belt top
+  DB P1B,P1B,P1B,P1B,P1H,P1H,P1H,P1H,P1H,P1H,P1B,P1B,P1B,P1B
+  ; row 10 – belt
+  DB BGC,BLK,BRN,BRN,BRN,BRN,BRN,BRN,BRN,BRN,BRN,BRN,BLK,BGC
+  ; row 11 – belt buckle
+  DB BGC,BLK,BRN,BRN,BRN,YEL,YEL,YEL,YEL,BRN,BRN,BRN,BLK,BGC
+  ; row 12 – upper legs
+  DB BGC,BGC,P1L,P1L,P1L,BLK,BGC,BGC,BLK,P1L,P1L,P1L,BGC,BGC
+  ; row 13 – mid legs
+  DB BGC,BGC,P1L,P1L,P1L,BLK,BGC,BGC,BLK,P1L,P1L,P1L,BGC,BGC
+  ; row 14 – knees
+  DB BGC,BGC,P1H,P1L,P1H,BLK,BGC,BGC,BLK,P1H,P1L,P1H,BGC,BGC
+  ; row 15 – lower legs
+  DB BGC,BGC,P1L,P1L,P1L,BLK,BGC,BGC,BLK,P1L,P1L,P1L,BGC,BGC
+  ; row 16 – lower legs 2
+  DB BGC,BGC,P1L,P1L,P1L,BLK,BGC,BGC,BLK,P1L,P1L,P1L,BGC,BGC
+  ; row 17 – ankle
+  DB BGC,BLK,DGR,DGR,DGR,BLK,BGC,BGC,BLK,DGR,DGR,DGR,BLK,BGC
+  ; row 18 – boot top
+  DB BGC,BLK,DGR,DGR,DGR,DGR,BLK,BLK,DGR,DGR,DGR,DGR,BLK,BGC
+  ; row 19 – boot sole
+  DB BGC,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BGC
+
+; ---------------------------------------------------------------
+; Player 2 sprite – 14 wide x 20 tall (red knight, faces right)
+; ---------------------------------------------------------------
+P2Sprite  LABEL BYTE
+  ; row  0
+  DB BGC,BGC,BLK,P2H,P2H,P2H,P2H,P2H,P2H,P2H,BLK,BGC,BGC,BGC
+  ; row  1
+  DB BGC,BLK,P2B,P2B,P2B,P2B,P2B,P2B,P2B,P2B,P2B,BLK,BGC,BGC
+  ; row  2
+  DB BGC,BLK,P2H,YEL,BLK,P2H,P2H,P2H,P2H,BLK,YEL,P2H,BLK,BGC
+  ; row  3
+  DB BGC,BLK,P2B,P2B,P2B,P2B,P2B,P2B,P2B,P2B,P2B,P2B,BLK,BGC
+  ; row  4
+  DB BGC,BGC,BGC,BLK,SK, SK, SK, SK, SK, SK, BLK,BGC,BGC,BGC
+  ; row  5
+  DB BLK,P2H,P2H,BLK,P2B,P2B,P2B,P2B,P2B,P2B,BLK,P2H,P2H,BLK
+  ; row  6
+  DB P2B,P2H,P2H,P2B,P2B,P2H,P2H,P2H,P2H,P2B,P2B,P2H,P2H,P2B
+  ; row  7
+  DB P2B,P2B,P2B,P2B,P2H,P2H,P2H,P2H,P2H,P2H,P2B,P2B,P2B,P2B
+  ; row  8
+  DB P2B,P2B,P2B,BLK,YEL,YEL,YEL,YEL,YEL,YEL,BLK,P2B,P2B,P2B
+  ; row  9
+  DB P2B,P2B,P2B,P2B,P2H,P2H,P2H,P2H,P2H,P2H,P2B,P2B,P2B,P2B
+  ; row 10
+  DB BGC,BLK,BRN,BRN,BRN,BRN,BRN,BRN,BRN,BRN,BRN,BRN,BLK,BGC
+  ; row 11
+  DB BGC,BLK,BRN,BRN,BRN,YEL,YEL,YEL,YEL,BRN,BRN,BRN,BLK,BGC
+  ; row 12
+  DB BGC,BGC,P2L,P2L,P2L,BLK,BGC,BGC,BLK,P2L,P2L,P2L,BGC,BGC
+  ; row 13
+  DB BGC,BGC,P2L,P2L,P2L,BLK,BGC,BGC,BLK,P2L,P2L,P2L,BGC,BGC
+  ; row 14
+  DB BGC,BGC,P2H,P2L,P2H,BLK,BGC,BGC,BLK,P2H,P2L,P2H,BGC,BGC
+  ; row 15
+  DB BGC,BGC,P2L,P2L,P2L,BLK,BGC,BGC,BLK,P2L,P2L,P2L,BGC,BGC
+  ; row 16
+  DB BGC,BGC,P2L,P2L,P2L,BLK,BGC,BGC,BLK,P2L,P2L,P2L,BGC,BGC
+  ; row 17
+  DB BGC,BLK,DGR,DGR,DGR,BLK,BGC,BGC,BLK,DGR,DGR,DGR,BLK,BGC
+  ; row 18
+  DB BGC,BLK,DGR,DGR,DGR,DGR,BLK,BLK,DGR,DGR,DGR,DGR,BLK,BGC
+  ; row 19
+  DB BGC,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BLK,BGC
 
 .CODE
 
@@ -159,7 +274,27 @@ RightBlocked:
 
 DoneHorizontal:
 
+    ; Update facing direction based on movement
+    CMP  MoveLeft, 1
+    JNE  CheckRight_Facing
+    ; Moving left - update PlayerFacing
+    MOV  PlayerFacing, -1
+    JMP  DoneFacing
+    
+CheckRight_Facing:
+    CMP  MoveRight, 1
+    JNE  DoneFacing
+    ; Moving right
+    MOV  PlayerFacing, 1
+    
+DoneFacing:
+    ; Handle fire button (independent of jump)
+    CMP  FirePlayer1, 1
+    JNE  CheckJump1
+    CALL FireBulletPlayer1
+
     ; Jumping
+CheckJump1:
     CMP  DoJump, 1
     JNE  DoneJump
     CMP  OnGround, 1              ; can only jump if on the ground
@@ -793,44 +928,57 @@ RightDone:
 CheckRightCollision ENDP
 
 ; DrawPlayer
-; Draws the player sprite as a filled colored rectangle.
-; Uses PlayerX and PlayerY to determine screen position.
+; Draws Player 1 as a pixel-art character sprite.
+; Iterates over P1Sprite (14x20 bytes); pixels equal to BGC are
+; transparent (skipped) so the background shows through.
 DrawPlayer PROC NEAR
     PUSH ES
     PUSH AX
     PUSH BX
     PUSH CX
+    PUSH DX
+    PUSH SI
     PUSH DI
 
-    MOV  AX, VideoSeg             ; Dynamic video segment
+    MOV  AX, VideoSeg
     MOV  ES, AX
 
-    MOV  BX, PlayerX              ; BX = X position
-    MOV  DX, PlayerY              ; DX = Y position
+    LEA  SI, P1Sprite             ; SI -> sprite data
 
-    MOV  CX, PLAYER_H             ; draw PLAYER_H rows
+    MOV  DX, PlayerY              ; DX = current screen row
+    MOV  CX, PLAYER_H             ; row counter
 
-DrawRowLoop:
-    PUSH DX                       ; SAVE DX
-    ; Offset in video memory = DX * 320 + BX
-    MOV  AX, DX
-    MOV  DI, 320
-    MUL  DI                       ; AX = DX * 320
-    ADD  AX, BX                   ; AX += X
-    MOV  DI, AX                   ; ES:DI = pixel row start
-
-    ; Fill PLAYER_W pixels with player color
+DP1_RowLoop:
+    ; Compute video offset for this row: DX*320 + PlayerX
+    PUSH DX
     PUSH CX
-    MOV  CX, PLAYER_W
-    MOV  AL, PLAYER_COLOR         ; bright cyan
-    REP  STOSB
-    POP  CX
+    MOV  AX, DX
+    MOV  BX, 320
+    MUL  BX                       ; AX = row * 320
+    ADD  AX, PlayerX
+    MOV  DI, AX                   ; ES:DI = left pixel of this row
 
-    POP  DX                       ; RESTORE DX
-    INC  DX                       ; next pixel row
-    LOOP DrawRowLoop
+    ; Draw PLAYER_W pixels in this row
+    MOV  BX, PLAYER_W
+DP1_ColLoop:
+    MOV  AL, [SI]                 ; fetch sprite pixel
+    INC  SI
+    CMP  AL, BGC                  ; transparent?
+    JE   DP1_Skip                 ; yes – leave background pixel alone
+    MOV  ES:[DI], AL              ; write pixel
+DP1_Skip:
+    INC  DI
+    DEC  BX
+    JNZ  DP1_ColLoop
+
+    POP  CX
+    POP  DX
+    INC  DX                       ; next screen row
+    LOOP DP1_RowLoop
 
     POP  DI
+    POP  SI
+    POP  DX
     POP  CX
     POP  BX
     POP  AX
@@ -915,7 +1063,27 @@ RightBlocked_P2:
 
 DoneHorizontal_P2:
 
+    ; Update facing direction based on movement
+    CMP  MoveLeft2, 1
+    JNE  CheckRight_Facing_P2
+    ; Moving left - update Player2Facing
+    MOV  Player2Facing, -1
+    JMP  DoneFacing_P2
+    
+CheckRight_Facing_P2:
+    CMP  MoveRight2, 1
+    JNE  DoneFacing_P2
+    ; Moving right
+    MOV  Player2Facing, 1
+    
+DoneFacing_P2:
+    ; Handle fire button (independent of jump)
+    CMP  FirePlayer2, 1
+    JNE  CheckJump2
+    CALL FireBulletPlayer2
+
     ; Jumping
+CheckJump2:
     CMP  DoJump2, 1
     JNE  DoneJump_P2
     CMP  OnGround2, 1              ; can only jump if on the ground
@@ -1157,44 +1325,54 @@ RightDone_P2:
 CheckRightCollision_P2 ENDP
 
 ; DrawPlayer2
-; Draws the player sprite as a filled colored rectangle.
-; Uses Player2X and Player2Y to determine screen position.
+; Draws Player 2 as a pixel-art character sprite.
+; Iterates over P2Sprite (14x20 bytes); BGC pixels are transparent.
 DrawPlayer2 PROC NEAR
     PUSH ES
     PUSH AX
     PUSH BX
     PUSH CX
+    PUSH DX
+    PUSH SI
     PUSH DI
 
-    MOV  AX, VideoSeg             ; Dynamic video segment
+    MOV  AX, VideoSeg
     MOV  ES, AX
 
-    MOV  BX, Player2X              ; BX = X position
-    MOV  DX, Player2Y              ; DX = Y position
+    LEA  SI, P2Sprite             ; SI -> sprite data
 
-    MOV  CX, PLAYER_H             ; draw PLAYER_H rows
+    MOV  DX, Player2Y             ; DX = current screen row
+    MOV  CX, PLAYER_H             ; row counter
 
-DrawRowLoop_P2:
-    PUSH DX                       ; SAVE DX
-    ; Offset in video memory = DX * 320 + BX
-    MOV  AX, DX
-    MOV  DI, 320
-    MUL  DI                       ; AX = DX * 320
-    ADD  AX, BX                   ; AX += X
-    MOV  DI, AX                   ; ES:DI = pixel row start
-
-    ; Fill PLAYER_W pixels with player color
+DP2_RowLoop:
+    PUSH DX
     PUSH CX
-    MOV  CX, PLAYER_W
-    MOV  AL, PLAYER2_COLOR         ; bright cyan
-    REP  STOSB
-    POP  CX
+    MOV  AX, DX
+    MOV  BX, 320
+    MUL  BX                       ; AX = row * 320
+    ADD  AX, Player2X
+    MOV  DI, AX
 
-    POP  DX                       ; RESTORE DX
-    INC  DX                       ; next pixel row
-    LOOP DrawRowLoop_P2
+    MOV  BX, PLAYER_W
+DP2_ColLoop:
+    MOV  AL, [SI]
+    INC  SI
+    CMP  AL, BGC
+    JE   DP2_Skip
+    MOV  ES:[DI], AL
+DP2_Skip:
+    INC  DI
+    DEC  BX
+    JNZ  DP2_ColLoop
+
+    POP  CX
+    POP  DX
+    INC  DX
+    LOOP DP2_RowLoop
 
     POP  DI
+    POP  SI
+    POP  DX
     POP  CX
     POP  BX
     POP  AX
