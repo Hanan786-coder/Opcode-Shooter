@@ -315,8 +315,9 @@ CoolDone2:
     XOR  BX, BX
 UpdP1:
     CMP  BX, MAX_BULLETS
-    JAE  UpdP2Start
-
+    jb skip_b1           ; Jump if Below (opposite of JAE) to skip
+        jmp UpdP2Start       ; Far jump to the label
+    skip_b1:
     CMP  BulletActive1[BX], 0
     JE   UpdP1Next
 
@@ -379,8 +380,9 @@ UpdP2Start:
     XOR  BX, BX
 UpdP2:
     CMP  BX, MAX_BULLETS
-    JAE  UpdDone
-
+    jb skip_b2           ; Jump if Below to skip
+        jmp UpdDone          ; Far jump to the label
+    skip_b2:
     CMP  BulletActive2[BX], 0
     JE   UpdP2Next
 

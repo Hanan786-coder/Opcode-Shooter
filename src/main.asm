@@ -124,8 +124,9 @@ MAIN PROC FAR
     ; Loop: read input -> update state -> draw frame
 GameLoop:
     CMP  GameRunning, 0
-    JE   ExitGame                 ; if GameRunning=0, quit
-
+    jne SkipExit          ; if GameRunning != 0, skip the jump
+        jmp ExitGame          ; if GameRunning == 0, jump to ExitGame
+    SkipExit:                 ; the rest of your loop continues here
     ; 1) Read keyboard input (updates player direction flags)
     CALL ReadInput
 

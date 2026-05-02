@@ -191,9 +191,13 @@ CheckCol:
     XOR  BX, BX
 UpdLoop:
     CMP  BX, MAX_POWERUPS
-    JAE  UpdDone
+    jb skip_upd1      ; The opposite of JAE is JB (Jump if Below)
+    jmp UpdDone       ; Use JMP to reach the far label
+    skip_upd1:        ; Continue here if it was Below
     CMP  PwrActive[BX], 0
-    JE   NextPwr
+    jne skip_next1    ; The opposite of JE is JNE (Jump if Not Equal)
+    jmp NextPwr       ; Use JMP to reach the far label
+    skip_next1:       ; Continue here if it was Not Equal
     
     MOV  SI, BX
     SHL  SI, 1
