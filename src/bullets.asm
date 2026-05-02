@@ -29,6 +29,12 @@ EXTRN PlayerX  : WORD
 EXTRN PlayerY  : WORD
 EXTRN Player2X : WORD
 EXTRN Player2Y : WORD
+EXTRN PlayerHealth : WORD
+EXTRN Player2Health : WORD
+EXTRN P1Shield : BYTE
+EXTRN P2Shield : BYTE
+EXTRN P1Ultra : BYTE
+EXTRN P2Ultra : BYTE
 EXTRN VideoSeg : WORD
 
 PUBLIC InitBullets
@@ -44,8 +50,8 @@ PUBLIC FireCooldown2
 ; ---------------------------------------------------------------
 ; Equates
 ; ---------------------------------------------------------------
-BULLET_RADIUS  EQU 5
-BULLET_DIAM    EQU 11              ; 2*BULLET_RADIUS + 1
+BULLET_RADIUS  EQU 3
+BULLET_DIAM    EQU 7              ; 2*BULLET_RADIUS + 1
 BULLET_SPEED   EQU 8
 BULLET_COLOR1  EQU 0Eh            ; yellow
 BULLET_COLOR2  EQU 0Fh            ; white
@@ -164,6 +170,15 @@ FireBulletPlayer1 PROC NEAR
     CMP  FireCooldown1, 0
     JA   FireExit1
 
+    ; Ensure distance >= 10 pixels
+    MOV  AX, PlayerX
+    SUB  AX, Player2X
+    JNS  DistPos1          ; if result non-negative keep
+    NEG  AX                ; make positive
+DistPos1:
+    CMP  AX, 10
+    JL   FireExit1
+
     XOR  BX, BX
 FindFree1:
     CMP  BX, MAX_BULLETS
@@ -180,7 +195,7 @@ GotSlot1:
     SHL  SI, 1              ; word index = slot * 2
 
     MOV  AX, PlayerY
-    ADD  AX, PLAYER_H / 2
+    ADD  AX, PLAYER_H / 2 - 3
     MOV  BulletY1[SI], AX
 
     MOV  AX, PlayerFacing
@@ -188,14 +203,14 @@ GotSlot1:
     JNE  P1GoLeft
 
     MOV  AX, PlayerX
-    ADD  AX, PLAYER_W + BULLET_RADIUS + 2
+    ADD  AX, PLAYER_W
     MOV  BulletX1[SI], AX
     MOV  BulletVelX1[SI], BULLET_SPEED
     JMP  P1FiredOk
 
 P1GoLeft:
     MOV  AX, PlayerX
-    SUB  AX, BULLET_RADIUS + 2
+    SUB  AX, BULLET_RADIUS
     MOV  BulletX1[SI], AX
     MOV  AX, -BULLET_SPEED
     MOV  BulletVelX1[SI], AX
@@ -223,6 +238,15 @@ FireBulletPlayer2 PROC NEAR
     CMP  FireCooldown2, 0
     JA   FireExit2
 
+    ; Ensure distance >= 10 pixels
+    MOV  AX, Player2X
+    SUB  AX, PlayerX
+    JNS  DistPos2
+    NEG  AX
+DistPos2:
+    CMP  AX, 10
+    JL   FireExit2
+
     XOR  BX, BX
 FindFree2:
     CMP  BX, MAX_BULLETS
@@ -239,7 +263,7 @@ GotSlot2:
     SHL  SI, 1
 
     MOV  AX, Player2Y
-    ADD  AX, PLAYER_H / 2
+    ADD  AX, PLAYER_H / 2 - 3
     MOV  BulletY2[SI], AX
 
     MOV  AX, Player2Facing
@@ -247,14 +271,14 @@ GotSlot2:
     JNE  P2GoLeft
 
     MOV  AX, Player2X
-    ADD  AX, PLAYER_W + BULLET_RADIUS + 2
+    ADD  AX, PLAYER_W
     MOV  BulletX2[SI], AX
     MOV  BulletVelX2[SI], BULLET_SPEED
     JMP  P2FiredOk
 
 P2GoLeft:
     MOV  AX, Player2X
-    SUB  AX, BULLET_RADIUS + 2
+    SUB  AX, BULLET_RADIUS
     MOV  BulletX2[SI], AX
     MOV  AX, -BULLET_SPEED
     MOV  BulletVelX2[SI], AX
@@ -305,7 +329,45 @@ UpdP1:
     CMP  AX, 0
     JL   DeactP1
     CMP  AX, SCREEN_W
-    JL   UpdP1Next
+    JGE  DeactP1
+
+    ; --- Collision Check with P2 ---
+    MOV  AX, BulletX1[SI]
+    CMP  AX, Player2X
+    JL   NoColP1
+    MOV  DX, Player2X
+    ADD  DX, PLAYER_W
+    CMP  AX, DX
+    JG   NoColP1
+
+    MOV  AX, BulletY1[SI]
+    CMP  AX, Player2Y
+    JL   NoColP1
+    MOV  DX, Player2Y
+    ADD  DX, PLAYER_H
+    CMP  AX, DX
+    JG   NoColP1
+
+    ; Collision hit!
+    MOV  BulletActive1[BX], 0
+    
+    CMP  P2Shield, 1
+    JNE  P1HitDmg
+    MOV  P2Shield, 0
+    JMP  UpdP1Next
+P1HitDmg:
+    CMP  P1Ultra, 0
+    JE   P1NormDmg
+    DEC  P1Ultra
+    SUB  Player2Health, 2
+    JMP  UpdP1Next
+P1NormDmg:
+    DEC  Player2Health
+    JMP  UpdP1Next
+
+NoColP1:
+    JMP  UpdP1Next
+
 DeactP1:
     MOV  BulletActive1[BX], 0
 
@@ -331,7 +393,45 @@ UpdP2:
     CMP  AX, 0
     JL   DeactP2
     CMP  AX, SCREEN_W
-    JL   UpdP2Next
+    JGE  DeactP2
+
+    ; --- Collision Check with P1 ---
+    MOV  AX, BulletX2[SI]
+    CMP  AX, PlayerX
+    JL   NoColP2
+    MOV  DX, PlayerX
+    ADD  DX, PLAYER_W
+    CMP  AX, DX
+    JG   NoColP2
+
+    MOV  AX, BulletY2[SI]
+    CMP  AX, PlayerY
+    JL   NoColP2
+    MOV  DX, PlayerY
+    ADD  DX, PLAYER_H
+    CMP  AX, DX
+    JG   NoColP2
+
+    ; Collision hit!
+    MOV  BulletActive2[BX], 0
+    
+    CMP  P1Shield, 1
+    JNE  P2HitDmg
+    MOV  P1Shield, 0
+    JMP  UpdP2Next
+P2HitDmg:
+    CMP  P2Ultra, 0
+    JE   P2NormDmg
+    DEC  P2Ultra
+    SUB  PlayerHealth, 2
+    JMP  UpdP2Next
+P2NormDmg:
+    DEC  PlayerHealth
+    JMP  UpdP2Next
+
+NoColP2:
+    JMP  UpdP2Next
+
 DeactP2:
     MOV  BulletActive2[BX], 0
 
