@@ -24,6 +24,8 @@ PUBLIC DoJump
 PUBLIC MoveLeft2
 PUBLIC MoveRight2
 PUBLIC DoJump2
+PUBLIC FirePlayer1
+PUBLIC FirePlayer2
 PUBLIC ReadInput
 PUBLIC InstallKbdHandler
 PUBLIC RemoveKbdHandler
@@ -38,6 +40,9 @@ MoveLeft2   DB  0
 MoveRight2  DB  0
 DoJump2     DB  0
 
+FirePlayer1 DB  0
+FirePlayer2 DB  0
+
 SCAN_LEFT   EQU 4Bh
 SCAN_RIGHT  EQU 4Dh
 SCAN_UP     EQU 48h
@@ -46,6 +51,8 @@ SCAN_ESC    EQU 01h
 SCAN_A      EQU 1Eh
 SCAN_D      EQU 20h
 SCAN_W      EQU 11h
+SCAN_F      EQU 21h
+SCAN_K      EQU 25h
 
 ; Saved old INT 9h vector
 OldInt9Off  DW  0
@@ -180,6 +187,8 @@ ReadInput PROC NEAR
     MOV  MoveLeft2,  0
     MOV  MoveRight2, 0
     MOV  DoJump2,    0
+    MOV  FirePlayer1, 0
+    MOV  FirePlayer2, 0
 
     ; Player 1 - Arrow keys
     MOV  BX, SCAN_LEFT
@@ -215,8 +224,20 @@ ChkD:
 ChkW:
     MOV  BX, SCAN_W
     CMP  KeyState[BX], 1
-    JNE  ChkEsc
+    JNE  ChkF
     MOV  DoJump2, 1
+
+ChkF:
+    MOV  BX, SCAN_F
+    CMP  KeyState[BX], 1
+    JNE  ChkK
+    MOV  FirePlayer2, 1
+
+ChkK:
+    MOV  BX, SCAN_K
+    CMP  KeyState[BX], 1
+    JNE  ChkEsc
+    MOV  FirePlayer1, 1
 
 ChkEsc:
     MOV  BX, SCAN_ESC
