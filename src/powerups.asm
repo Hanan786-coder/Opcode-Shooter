@@ -37,9 +37,8 @@ PwrY      DW MAX_POWERUPS DUP (0)
 SpawnTimer DW SPAWN_INTERVAL
 RandSeed   DW 1234h
 
-BGC EQU 0   ; not used for letters, kept for DrawPowerups sprites
+BGC EQU 0   
 
-; 8x8 Heart (Heal - Type 3) - kept for world pickup sprites
 RD  EQU 0Ch ; Red
 BLU EQU 09h ; Blue
 YL  EQU 0Eh ; Yellow
@@ -77,9 +76,6 @@ SprUltra LABEL BYTE
 
 .CODE
 
-; ---------------------------------------------------------------
-; Random Number Generator
-; ---------------------------------------------------------------
 Random PROC NEAR
     PUSH CX
     PUSH DX
@@ -94,7 +90,6 @@ Random PROC NEAR
 Random ENDP
 
 RandomRange PROC NEAR
-    ; BX = max value (returns 0 to BX-1)
     PUSH DX
     CALL Random
     XOR  DX, DX
@@ -104,19 +99,12 @@ RandomRange PROC NEAR
     RET
 RandomRange ENDP
 
-; ---------------------------------------------------------------
-; Initialization
-; ---------------------------------------------------------------
 InitPowerups PROC NEAR
     PUSH AX
     PUSH DX
-    
-    ; Seed RNG from system timer
     MOV  AH, 00h
     INT  1Ah
     MOV  RandSeed, DX
-    
-    ; Clear arrays
     XOR  BX, BX
 ClearLoop:
     CMP  BX, MAX_POWERUPS
@@ -124,16 +112,12 @@ ClearLoop:
     MOV  PwrActive[BX], 0
     INC  BX
     JMP  ClearLoop
-    
 InitDone:
     POP  DX
     POP  AX
     RET
 InitPowerups ENDP
 
-; ---------------------------------------------------------------
-; Update
-; ---------------------------------------------------------------
 UpdatePowerups PROC NEAR
     PUSH AX
     PUSH BX
@@ -141,36 +125,26 @@ UpdatePowerups PROC NEAR
     PUSH DX
     PUSH SI
 
-    ; Spawn logic
     DEC  SpawnTimer
     CMP  SpawnTimer, 0
     JG   CheckCol
-    
-    ; Reset timer
     MOV  SpawnTimer, SPAWN_INTERVAL
-    
-    ; Find free slot
     XOR  BX, BX
 FindFree:
     CMP  BX, MAX_POWERUPS
-    JAE  CheckCol        ; No free slots
+    JAE  CheckCol        
     CMP  PwrActive[BX], 0
     JE   SpawnSlot
     INC  BX
     JMP  FindFree
-    
 SpawnSlot:
     MOV  PwrActive[BX], 1
-    
-    ; Random Type (1 to 3)
     PUSH BX
     MOV  BX, 3
     CALL RandomRange
     INC  AX
     POP  BX
     MOV  PwrType[BX], AL
-    
-    ; Random X (10 to 300)
     PUSH BX
     MOV  BX, 290
     CALL RandomRange
@@ -179,31 +153,32 @@ SpawnSlot:
     MOV  SI, BX
     SHL  SI, 1
     MOV  PwrX[SI], AX
-    
-    ; Random Y (30 to 160)
     PUSH BX
     MOV  BX, 130
     CALL RandomRange
     ADD  AX, 30
     POP  BX
+    MOV  SI, BX
+    SHL  SI, 1
     MOV  PwrY[SI], AX
 
 CheckCol:
     XOR  BX, BX
 UpdLoop:
     CMP  BX, MAX_POWERUPS
-    JAE  UpdDone
+    JB   SkipPwr1             ; FIX: Opposite of JAE
+    JMP  UpdDone              ; FIX: Far Jump
+SkipPwr1:
+
     CMP  PwrActive[BX], 0
-    JE   NextPwr
+    JNE  SkipPwr2             ; FIX: Opposite of JE
+    JMP  NextPwr              ; FIX: Far Jump
+SkipPwr2:
     
     MOV  SI, BX
     SHL  SI, 1
-    
-    ; Check collision with Player 1
     MOV  AX, PwrX[SI]
     MOV  CX, PwrY[SI]
-    
-    ; P1 X check
     MOV  DX, PlayerX
     ADD  DX, PLAYER_W
     CMP  AX, DX
@@ -212,8 +187,6 @@ UpdLoop:
     ADD  DX, POWERUP_W
     CMP  DX, PlayerX
     JLE  CheckP2
-    
-    ; P1 Y check
     MOV  DX, PlayerY
     ADD  DX, PLAYER_H
     CMP  CX, DX
@@ -222,8 +195,6 @@ UpdLoop:
     ADD  DX, POWERUP_H
     CMP  DX, PlayerY
     JLE  CheckP2
-    
-    ; Hit P1
     MOV  PwrActive[BX], 0
     MOV  AL, PwrType[BX]
     CMP  AL, 1
@@ -233,7 +204,6 @@ UpdLoop:
     CMP  AL, 3
     JE   P1GotHeal
     JMP  NextPwr
-    
 P1GotUltra:
     MOV  P1Ultra, 1
     JMP  NextPwr
@@ -246,9 +216,7 @@ P1GotHeal:
     JLE  NextPwr
     MOV  PlayerHealth, 10
     JMP  NextPwr
-
 CheckP2:
-    ; P2 X check
     MOV  DX, Player2X
     ADD  DX, PLAYER_W
     CMP  AX, DX
@@ -257,8 +225,6 @@ CheckP2:
     ADD  DX, POWERUP_W
     CMP  DX, Player2X
     JLE  NextPwr
-    
-    ; P2 Y check
     MOV  DX, Player2Y
     ADD  DX, PLAYER_H
     CMP  CX, DX
@@ -267,8 +233,6 @@ CheckP2:
     ADD  DX, POWERUP_H
     CMP  DX, Player2Y
     JLE  NextPwr
-    
-    ; Hit P2
     MOV  PwrActive[BX], 0
     MOV  AL, PwrType[BX]
     CMP  AL, 1
@@ -278,7 +242,6 @@ CheckP2:
     CMP  AL, 3
     JE   P2GotHeal
     JMP  NextPwr
-    
 P2GotUltra:
     MOV  P2Ultra, 1
     JMP  NextPwr
@@ -290,11 +253,9 @@ P2GotHeal:
     CMP  Player2Health, 10
     JLE  NextPwr
     MOV  Player2Health, 10
-    
 NextPwr:
     INC  BX
     JMP  UpdLoop
-    
 UpdDone:
     POP  SI
     POP  DX
@@ -304,9 +265,6 @@ UpdDone:
     RET
 UpdatePowerups ENDP
 
-; ---------------------------------------------------------------
-; Drawing
-; ---------------------------------------------------------------
 DrawPowerups PROC NEAR
     PUSH ES
     PUSH AX
@@ -316,54 +274,41 @@ DrawPowerups PROC NEAR
     PUSH SI
     PUSH DI
     PUSH BP
-
     MOV  AX, VideoSeg
     MOV  ES, AX
-
     XOR  BX, BX
 DrwLoop:
     CMP  BX, MAX_POWERUPS
     JAE  DrwDone
     CMP  PwrActive[BX], 0
     JE   DrwNext
-    
     MOV  SI, BX
     SHL  SI, 1
-    
     MOV  AX, PwrX[SI]
     MOV  DX, PwrY[SI]
-    
-    ; Select sprite
     MOV  CL, PwrType[BX]
     CMP  CL, 1
     JE   UseUltra
     CMP  CL, 2
     JE   UseShield
-    ; Type 3 Heal
     LEA  BP, SprHeal
     JMP  DoDraw
-    
 UseUltra:
     LEA  BP, SprUltra
     JMP  DoDraw
-    
 UseShield:
     LEA  BP, SprShield
-    
 DoDraw:
-    ; Draw 8x8 sprite at AX, DX
     MOV  CX, POWERUP_H
 DrwRow:
     PUSH DX
     PUSH CX
     PUSH AX
-    
     MOV  DI, DX
     MOV  CX, 320
     XCHG AX, DI
     MUL  CX
-    ADD  DI, AX     ; DI = Y * 320 + X
-    
+    ADD  DI, AX     
     MOV  CX, POWERUP_W
 DrwCol:
     MOV  AL, DS:[BP]
@@ -375,17 +320,14 @@ SkipPix:
     INC  DI
     DEC  CX
     JNZ  DrwCol
-    
     POP  AX
     POP  CX
     POP  DX
     INC  DX
     LOOP DrwRow
-    
 DrwNext:
     INC  BX
     JMP  DrwLoop
-    
 DrwDone:
     POP  BP
     POP  DI
@@ -398,15 +340,6 @@ DrwDone:
     RET
 DrawPowerups ENDP
 
-; -----------------------------------------------------
-; DrawPowerupUI
-; Draws two 5x9 indicator blocks per player inside HUD.
-; Slot layout (Y=2..10, height=9):
-;   P1 Ultra  block: X=128  yellow (0Eh) if active, dark (08h) if not
-;   P1 Shield block: X=134  blue   (09h) if active, dark (08h) if not
-;   P2 Ultra  block: X=183  yellow (0Eh) if active, dark (08h) if not
-;   P2 Shield block: X=189  blue   (09h) if active, dark (08h) if not
-; -----------------------------------------------------
 DrawPowerupUI PROC NEAR
     PUSH AX
     PUSH BX
@@ -414,48 +347,40 @@ DrawPowerupUI PROC NEAR
     PUSH DX
     PUSH DI
     PUSH ES
-
     MOV  AX, VideoSeg
     MOV  ES, AX
-
-    ; --- P1 Indicators (Moved further right to X=130/136) ---
-    MOV  AL, 00h        ; Black (Hidden)
+    MOV  AL, 00h        
     CMP  P1Ultra, 1
     JNE  PUI_P1U
-    MOV  AL, 0Eh        ; Yellow
+    MOV  AL, 0Eh        
 PUI_P1U:
     MOV  BL, AL
-    MOV  AX, 130        ; Safe X
+    MOV  AX, 130        
     CALL DrawBlock5x9
-
     MOV  AL, 00h
     CMP  P1Shield, 1
     JNE  PUI_P1S
-    MOV  AL, 09h        ; Blue
+    MOV  AL, 09h        
 PUI_P1S:
     MOV  BL, AL
-    MOV  AX, 136        ; Safe X
+    MOV  AX, 136        
     CALL DrawBlock5x9
-
-    ; --- P2 Indicators (Moved further left to X=178/184) ---
     MOV  AL, 00h
     CMP  P2Ultra, 1
     JNE  PUI_P2U
     MOV  AL, 0Eh
 PUI_P2U:
     MOV  BL, AL
-    MOV  AX, 178        ; Safe X
+    MOV  AX, 178        
     CALL DrawBlock5x9
-
     MOV  AL, 00h
     CMP  P2Shield, 1
     JNE  PUI_P2S
     MOV  AL, 09h
 PUI_P2S:
     MOV  BL, AL
-    MOV  AX, 184        ; Safe X
+    MOV  AX, 184        
     CALL DrawBlock5x9
-
     POP  ES
     POP  DI
     POP  DX
@@ -465,17 +390,11 @@ PUI_P2S:
     RET
 DrawPowerupUI ENDP
 
-; -----------------------------------------------------
-; DrawBlock5x9
-; Draws a 5x9 filled rectangle at X=AX, Y=2..10, color=BL
-; ES must point to VideoSeg.
-; -----------------------------------------------------
 DrawBlock5x9 PROC NEAR
     PUSH AX
     PUSH CX
     PUSH DX
     PUSH DI
-
     MOV  DX, 2
     MOV  CX, 9
 DB59_Row:
@@ -489,7 +408,6 @@ DB59_Row:
     INC  DX
     POP  CX
     LOOP DB59_Row
-
     POP  DI
     POP  DX
     POP  CX
@@ -497,19 +415,13 @@ DB59_Row:
     RET
 DrawBlock5x9 ENDP
 
-; -----------------------------------------------------
-; CalcDI
-; Helper to compute offset without using MUL (which clobbers DX/AX)
-; Input:  DX = Y, AX = X
-; Output: DI = (Y * 320) + X
-; -----------------------------------------------------
 CalcDI PROC NEAR
     PUSH DX
     MOV  DI, DX
-    SHL  DI, 8      ; DI = Y * 256
-    SHL  DX, 6      ; DX = Y * 64
-    ADD  DI, DX     ; DI = Y * 320
-    ADD  DI, AX     ; DI = Y * 320 + X
+    SHL  DI, 8      
+    SHL  DX, 6      
+    ADD  DI, DX     
+    ADD  DI, AX     
     POP  DX
     RET
 CalcDI ENDP
