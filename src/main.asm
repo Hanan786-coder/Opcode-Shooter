@@ -1,74 +1,52 @@
 ; FILE: main.asm
-; PERSON: Member 1
-; ROLE: Entry point, game loop, DOS setup & teardown
-;
-; RESPONSIBILITIES:
-;   - Set video mode (320x200 256-color, Mode 13h)
-;   - Initialize all game data by calling init routines
-;   - Run the main game loop (read input -> update -> draw)
-;   - Restore text mode and exit cleanly
-;
-; HOW TO ASSEMBLE & LINK (MASM/LINK):
-;   masm main.asm;
-;   masm map.asm;
-;   masm player.asm;
-;   masm input.asm;
-;   masm bullets.asm;
-;   link main.obj+map.obj+player.obj+input.obj+bullets.obj, game.exe;
-
 .MODEL SMALL
-.286                              ; Enable 286 instructions (shift-by-immediate, etc.)
-.STACK 200h                       ; 512-byte stack
+.286                              
+.STACK 200h                       
 
-; Externals from other team members' files
-EXTRN InitMap    : NEAR           ; map.asm  – draws the static map
-EXTRN DrawMap    : NEAR           ; map.asm  – redraws map each frame
-EXTRN InitPlayer : NEAR           ; player.asm – sets player start pos
-EXTRN UpdatePlayer : NEAR         ; player.asm – move/gravity logic
-EXTRN DrawPlayer : NEAR           ; player.asm – renders player sprite
+EXTRN InitMap    : NEAR           
+EXTRN DrawMap    : NEAR           
+EXTRN SelectMap  : NEAR           
+EXTRN InitPlayer : NEAR           
+EXTRN UpdatePlayer : NEAR         
+EXTRN DrawPlayer : NEAR           
 EXTRN InitPlayer2 : NEAR
 EXTRN UpdatePlayer2 : NEAR
 EXTRN DrawPlayer2 : NEAR
-EXTRN ReadInput          : NEAR   ; input.asm – samples key-state table
-EXTRN InstallKbdHandler  : NEAR   ; input.asm – hooks INT 9h
-EXTRN RemoveKbdHandler   : NEAR   ; input.asm – restores INT 9h
-EXTRN InitBullets : NEAR          ; bullets.asm – initialize bullets
-EXTRN UpdateBullets : NEAR        ; bullets.asm – update bullet physics
-EXTRN DrawBullets : NEAR          ; bullets.asm – render bullets
-EXTRN InitPowerups : NEAR         ; powerups.asm
-EXTRN UpdatePowerups : NEAR       ; powerups.asm
-EXTRN DrawPowerups : NEAR         ; powerups.asm
-EXTRN DrawPowerupUI : NEAR        ; powerups.asm
-EXTRN PlayerHealth : WORD         ; player.asm
-EXTRN Player2Health : WORD        ; player.asm
-EXTRN P1Shield : BYTE             ; player.asm
-EXTRN P2Shield : BYTE             ; player.asm
-EXTRN P1Ultra : BYTE              ; player.asm
-EXTRN P2Ultra : BYTE              ; player.asm
+EXTRN ReadInput          : NEAR   
+EXTRN InstallKbdHandler  : NEAR   
+EXTRN RemoveKbdHandler   : NEAR   
+EXTRN InitBullets : NEAR          
+EXTRN UpdateBullets : NEAR        
+EXTRN DrawBullets : NEAR          
+EXTRN InitPowerups : NEAR         
+EXTRN UpdatePowerups : NEAR       
+EXTRN DrawPowerups : NEAR         
+EXTRN DrawPowerupUI : NEAR        
+EXTRN PlayerHealth : WORD         
+EXTRN Player2Health : WORD        
+EXTRN P1Shield : BYTE             
+EXTRN P2Shield : BYTE             
+EXTRN P1Ultra : BYTE              
+EXTRN P2Ultra : BYTE              
 
-; Global variables used by ALL modules
-PUBLIC GameRunning                ; 1 = keep looping, 0 = quit
-PUBLIC FrameDelay                 ; controls game speed
-PUBLIC VideoSeg                   ; Segment for double-buffering
+PUBLIC GameRunning                
+PUBLIC FrameDelay                 
+PUBLIC VideoSeg                   
 
 .FARDATA
-BackBuffer DB 64000 DUP (?)       ; 64KB off-screen buffer
+BackBuffer DB 64000 DUP (?)       
 
 .DATA
-GameRunning DB 1                  ; game loop flag (1=running, 0=quit)
-FrameDelay  DW 3000               ; inner delay loop counter
-                                  ;   bigger number = slower game
-VideoSeg    DW ?                  ; holds BackBuffer segment
-
+GameRunning DB 1                  
+FrameDelay  DW 3000               
+VideoSeg    DW ?                  
 P1Score     DW 0
 P2Score     DW 0
 Winner      DW 0
-
 WelcomeMsg  DB 'Starting game...', 0Dh, 0Ah, '$'
 P1WinMsg    DB 'Player 1 Wins!', 0Dh, 0Ah, '$'
 P2WinMsg    DB 'Player 2 Wins!', 0Dh, 0Ah, '$'
 
-; 3x5 pixel font for digits 0-3 and dash
 Fonts LABEL BYTE
     DB 1,1,1, 1,0,1, 1,0,1, 1,0,1, 1,1,1 ; 0
     DB 0,1,0, 1,1,0, 0,1,0, 0,1,0, 1,1,1 ; 1
@@ -78,11 +56,9 @@ FontDash DB 0,0,0, 0,0,0, 1,1,1, 0,0,0, 0,0,0
 
 .CODE
 
-; MAIN PROCEDURE
 MAIN PROC FAR
     MOV  AX, @DATA
     MOV  DS, AX
-
     MOV  AX, SEG BackBuffer
     MOV  VideoSeg, AX
 
@@ -91,6 +67,11 @@ MAIN PROC FAR
     INT  21h
 
     CALL SetVideoMode13h
+
+    ; --- RESTORED MENU LOGIC ---
+    CALL SelectMap
+    ; ---------------------------
+
     CALL InitMap
     CALL InitPlayer
     CALL InitPlayer2
@@ -100,8 +81,8 @@ MAIN PROC FAR
 
 GameLoop:
     CMP  GameRunning, 0
-    JNE  SkipExitGame             ; FIX: If not zero, skip the exit jump
-    JMP  ExitGame                 ; FIX: Far jump to reach ExitGame
+    JNE  SkipExitGame             
+    JMP  ExitGame                 ; TODAY'S FIXED JUMP
 SkipExitGame:
 
     CALL ReadInput
@@ -144,7 +125,6 @@ DrawScene:
     CALL DrawHealthbars
     CALL DrawPowerupUI
     CALL DrawScore
-
     CALL FramePause
 
     PUSH DS
@@ -157,35 +137,29 @@ DrawScene:
     MOV  CX, 32000                
     REP  MOVSW                    
     POP  DS
-
     JMP  GameLoop                 
 
 ExitGame:
     CALL SetTextMode
     CALL RemoveKbdHandler
-
     CMP  Winner, 1
     JE   PrintP1Win
     CMP  Winner, 2
     JE   PrintP2Win
     JMP  DoExit
-    
 PrintP1Win:
     MOV  AH, 09h
     LEA  DX, P1WinMsg
     INT  21h
     JMP  DoExit
-    
 PrintP2Win:
     MOV  AH, 09h
     LEA  DX, P2WinMsg
     INT  21h
-
 DoExit:
     MOV  AH, 4Ch
     MOV  AL, 0                    
     INT  21h
-
 MAIN ENDP
 
 SetVideoMode13h PROC NEAR
@@ -227,19 +201,15 @@ DrawHealthbars PROC NEAR
     PUSH SI
     PUSH DI
     PUSH ES
-
     MOV  AX, VideoSeg
     MOV  ES, AX
-
     XOR  DI, DI            
-    MOV  CX, 320 * 15      
+    MOV  CX, 4800
     MOV  AL, 00h
     REP  STOSB
-
     MOV  CX, 320
     MOV  AL, 08h
     REP  STOSB
-
     MOV  DX, 1
     MOV  AX, 4
     CALL CalcDI
@@ -267,7 +237,6 @@ HB_P1Vert:
     INC  DX
     POP  CX
     LOOP HB_P1Vert
-
     MOV  DX, 1
     MOV  AX, 195
     CALL CalcDI
@@ -295,7 +264,6 @@ HB_P2Vert:
     INC  DX
     POP  CX
     LOOP HB_P2Vert
-
     PUSH BP
     MOV  BX, PlayerHealth
     MOV  AL, 02h
@@ -343,7 +311,6 @@ HB_P1Row:
     JMP  HB_P1Seg
 HB_P1Done:
     POP  BP
-
     PUSH BP
     MOV  BX, Player2Health
     MOV  AL, 02h
@@ -391,7 +358,6 @@ HB_P2Row:
     JMP  HB_P2Seg
 HB_P2Done:
     POP  BP
-
     POP  ES
     POP  DI
     POP  SI
@@ -493,7 +459,6 @@ DS_P1Row:
     INC  SI
     JMP  DS_P1Loop
 DS_P1Done:
-
     MOV  SI, 1
     MOV  BX, P2Score
     MOV  DX, 3          
