@@ -349,38 +349,35 @@ DrawPowerupUI PROC NEAR
     PUSH ES
     MOV  AX, VideoSeg
     MOV  ES, AX
-    MOV  AL, 00h        
+    
     CMP  P1Ultra, 1
-    JNE  PUI_P1U
-    MOV  AL, 0Eh        
-PUI_P1U:
-    MOV  BL, AL
-    MOV  AX, 130        
+    JNE  Skip_P1U
+    MOV  BL, 0Eh        
+    MOV  AX, 127        
     CALL DrawBlock5x9
-    MOV  AL, 00h
+Skip_P1U:
+
     CMP  P1Shield, 1
-    JNE  PUI_P1S
-    MOV  AL, 09h        
-PUI_P1S:
-    MOV  BL, AL
-    MOV  AX, 136        
+    JNE  Skip_P1S
+    MOV  BL, 09h        
+    MOV  AX, 133        
     CALL DrawBlock5x9
-    MOV  AL, 00h
+Skip_P1S:
+
     CMP  P2Ultra, 1
-    JNE  PUI_P2U
-    MOV  AL, 0Eh
-PUI_P2U:
-    MOV  BL, AL
-    MOV  AX, 178        
+    JNE  Skip_P2U
+    MOV  BL, 0Eh
+    MOV  AX, 183        
     CALL DrawBlock5x9
-    MOV  AL, 00h
+Skip_P2U:
+
     CMP  P2Shield, 1
-    JNE  PUI_P2S
-    MOV  AL, 09h
-PUI_P2S:
-    MOV  BL, AL
-    MOV  AX, 184        
+    JNE  Skip_P2S
+    MOV  BL, 09h
+    MOV  AX, 189        
     CALL DrawBlock5x9
+Skip_P2S:
+
     POP  ES
     POP  DI
     POP  DX
