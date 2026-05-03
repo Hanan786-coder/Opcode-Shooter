@@ -54,7 +54,7 @@ PANEL2_X    EQU 112
 PANEL3_X    EQU 218
 
 ; Preview tile dimensions (20col * 4 = 80px, 12row * 7 = 84px)
-PREV_OFF_X  EQU 4          ; inset from panel left
+PREV_OFF_X  EQU 9          ; inset from panel left
 PREV_OFF_Y  EQU 4          ; inset from panel top
 TILE_PW     EQU 4          ; preview tile width in pixels
 TILE_PH     EQU 7          ; preview tile height in pixels
