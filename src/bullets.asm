@@ -23,8 +23,8 @@ PUBLIC Player2Facing
 PUBLIC FireCooldown1
 PUBLIC FireCooldown2
 
-BULLET_RADIUS  EQU 3
-BULLET_DIAM    EQU 7              
+BULLET_RADIUS  EQU 2
+BULLET_DIAM    EQU 5              
 BULLET_SPEED   EQU 8
 BULLET_COLOR1  EQU 0Eh            
 BULLET_COLOR2  EQU 0Fh            
