@@ -21,9 +21,11 @@ EXTRN GameRunning : BYTE
 PUBLIC MoveLeft
 PUBLIC MoveRight
 PUBLIC DoJump
+PUBLIC MoveDown
 PUBLIC MoveLeft2
 PUBLIC MoveRight2
 PUBLIC DoJump2
+PUBLIC MoveDown2
 PUBLIC FirePlayer1
 PUBLIC FirePlayer2
 PUBLIC ReadInput
@@ -35,10 +37,12 @@ PUBLIC RemoveKbdHandler
 MoveLeft    DB  0
 MoveRight   DB  0
 DoJump      DB  0
+MoveDown    DB  0
 
 MoveLeft2   DB  0
 MoveRight2  DB  0
 DoJump2     DB  0
+MoveDown2   DB  0
 
 FirePlayer1 DB  0
 FirePlayer2 DB  0
@@ -46,11 +50,13 @@ FirePlayer2 DB  0
 SCAN_LEFT   EQU 4Bh
 SCAN_RIGHT  EQU 4Dh
 SCAN_UP     EQU 48h
+SCAN_DOWN   EQU 50h
 SCAN_ESC    EQU 01h
 
 SCAN_A      EQU 1Eh
 SCAN_D      EQU 20h
 SCAN_W      EQU 11h
+SCAN_S      EQU 1Fh
 SCAN_F      EQU 21h
 SCAN_K      EQU 25h
 
@@ -184,9 +190,11 @@ ReadInput PROC NEAR
     MOV  MoveLeft,   0
     MOV  MoveRight,  0
     MOV  DoJump,     0
+    MOV  MoveDown,   0
     MOV  MoveLeft2,  0
     MOV  MoveRight2, 0
     MOV  DoJump2,    0
+    MOV  MoveDown2,  0
     MOV  FirePlayer1, 0
     MOV  FirePlayer2, 0
 
@@ -205,8 +213,14 @@ ChkRight:
 ChkUp:
     MOV  BX, SCAN_UP
     CMP  KeyState[BX], 1
-    JNE  ChkA
+    JNE  ChkDown
     MOV  DoJump, 1
+
+ChkDown:
+    MOV  BX, SCAN_DOWN
+    CMP  KeyState[BX], 1
+    JNE  ChkA
+    MOV  MoveDown, 1
 
     ; Player 2 - WASD
 ChkA:
@@ -224,8 +238,14 @@ ChkD:
 ChkW:
     MOV  BX, SCAN_W
     CMP  KeyState[BX], 1
-    JNE  ChkF
+    JNE  ChkS
     MOV  DoJump2, 1
+
+ChkS:
+    MOV  BX, SCAN_S
+    CMP  KeyState[BX], 1
+    JNE  ChkF
+    MOV  MoveDown2, 1
 
 ChkF:
     MOV  BX, SCAN_F
