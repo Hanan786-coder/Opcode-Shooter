@@ -23,12 +23,12 @@ PUBLIC DrawPowerupUI
 
 .DATA
 
-MAX_POWERUPS EQU 3
-SPAWN_INTERVAL EQU 150
-POWERUP_W EQU 8
-POWERUP_H EQU 8
-PLAYER_W EQU 14
-PLAYER_H EQU 20
+MAX_POWERUPS    EQU 3
+SPAWN_INTERVAL  EQU 150
+POWERUP_W       EQU 8
+POWERUP_H       EQU 8
+PLAYER_W        EQU 14
+PLAYER_H        EQU 20
 
 PwrActive DB MAX_POWERUPS DUP (0)
 PwrType   DB MAX_POWERUPS DUP (0)  ; 1=Ultra, 2=Shield, 3=Heal
@@ -38,12 +38,16 @@ PwrY      DW MAX_POWERUPS DUP (0)
 SpawnTimer DW SPAWN_INTERVAL
 RandSeed   DW 1234h
 
-BGC EQU 0   
+BGC EQU 0
 
 RD  EQU 0Ch ; Red
 BLU EQU 09h ; Blue
 YL  EQU 0Eh ; Yellow
 BGT EQU 0Bh ; Transparent bg color
+
+; Scratch variables for DrawBlock5x9
+DB59_Color DB 0
+DB59_X     DW 0
 
 SprHeal LABEL BYTE
   DB BGT, RD,  RD,  BGT, BGT, RD,  RD,  BGT
@@ -56,13 +60,13 @@ SprHeal LABEL BYTE
   DB BGT, BGT, BGT, BGT, BGT, BGT, BGT, BGT
 
 SprShield LABEL BYTE
-  DB BLU,  BLU,  BLU,  BLU,  BLU,  BLU,  BLU,  BLU
-  DB BLU,  BGT, BGT, BGT, BGT, BGT, BGT, BLU
-  DB BLU,  BGT, BLU,  BLU,  BLU,  BLU,  BGT, BLU
-  DB BLU,  BGT, BLU,  BLU,  BLU,  BLU,  BGT, BLU
-  DB BGT, BLU,  BGT, BGT, BGT, BGT, BLU,  BGT
-  DB BGT, BGT, BLU,  BGT, BGT, BLU,  BGT, BGT
-  DB BGT, BGT, BGT, BLU,  BLU,  BGT, BGT, BGT
+  DB BLU, BLU, BLU, BLU, BLU, BLU, BLU, BLU
+  DB BLU, BGT, BGT, BGT, BGT, BGT, BGT, BLU
+  DB BLU, BGT, BLU, BLU, BLU, BLU, BGT, BLU
+  DB BLU, BGT, BLU, BLU, BLU, BLU, BGT, BLU
+  DB BGT, BLU, BGT, BGT, BGT, BGT, BLU, BGT
+  DB BGT, BGT, BLU, BGT, BGT, BLU, BGT, BGT
+  DB BGT, BGT, BGT, BLU, BLU, BGT, BGT, BGT
   DB BGT, BGT, BGT, BGT, BGT, BGT, BGT, BGT
 
 SprUltra LABEL BYTE
@@ -128,13 +132,13 @@ UpdatePowerups PROC NEAR
 
     DEC  SpawnTimer
     CMP  SpawnTimer, 0
-    JLE  SkipJump    ; If NOT Greater (Less or Equal), skip the jump
-        JMP  CheckCol    ; Unconditional jump (can reach much further)
-    SkipJump:    MOV  SpawnTimer, SPAWN_INTERVAL
+    JLE  SkipJump
+        JMP  CheckCol
+    SkipJump: MOV  SpawnTimer, SPAWN_INTERVAL
     XOR  BX, BX
 FindFree:
     CMP  BX, MAX_POWERUPS
-    JAE  CheckCol        
+    JAE  CheckCol
     CMP  PwrActive[BX], 0
     JE   SpawnSlot
     INC  BX
@@ -170,20 +174,20 @@ RetrySpawn:
     PUSH CX
     PUSH DX
     MOV  AX, PwrY[SI]
-    ADD  AX, 4             ; Center Y
+    ADD  AX, 4
     XOR  DX, DX
-    MOV  CX, 16      
+    MOV  CX, 16
     DIV  CX
-    MOV  BX, AX            ; BX = Row
+    MOV  BX, AX
     MOV  AX, PwrX[SI]
-    ADD  AX, 4             ; Center X
+    ADD  AX, 4
     XOR  DX, DX
-    DIV  CX                ; AX = Col
-    MOV  CX, AX            ; CX = Col
+    DIV  CX
+    MOV  CX, AX
     MOV  AX, BX
-    MOV  DX, 20      
-    MUL  DX                ; Row * 20
-    ADD  AX, CX            ; + Col
+    MOV  DX, 20
+    MUL  DX
+    ADD  AX, CX
     MOV  DI, AX
     MOV  AL, MapData[DI]
     CMP  AL, 1
@@ -197,15 +201,13 @@ CheckCol:
     XOR  BX, BX
 UpdLoop:
     CMP  BX, MAX_POWERUPS
-    JB   SkipPwr1             ; FIX: Opposite of JAE
-    JMP  UpdDone              ; FIX: Far Jump
+    JB   SkipPwr1
+    JMP  UpdDone
 SkipPwr1:
-
     CMP  PwrActive[BX], 0
-    JNE  SkipPwr2             ; FIX: Opposite of JE
-    JMP  NextPwr              ; FIX: Far Jump
+    JNE  SkipPwr2
+    JMP  NextPwr
 SkipPwr2:
-    
     MOV  SI, BX
     SHL  SI, 1
     MOV  AX, PwrX[SI]
@@ -339,7 +341,7 @@ DrwRow:
     MOV  CX, 320
     XCHG AX, DI
     MUL  CX
-    ADD  DI, AX     
+    ADD  DI, AX
     MOV  CX, POWERUP_W
 DrwCol:
     MOV  AL, DS:[BP]
@@ -380,32 +382,38 @@ DrawPowerupUI PROC NEAR
     PUSH ES
     MOV  AX, VideoSeg
     MOV  ES, AX
-    
+
+    ; --- Player 1 indicators ---
     CMP  P1Ultra, 1
     JNE  Skip_P1U
-    MOV  BL, 0Eh        
-    MOV  AX, 127        
+    MOV  BL, 0Eh        ; Yellow for Ultra
+    MOV  AX, 127        ; X position
+    MOV  DX, 2          ; Y position
     CALL DrawBlock5x9
 Skip_P1U:
 
     CMP  P1Shield, 1
     JNE  Skip_P1S
-    MOV  BL, 09h        
-    MOV  AX, 133        
+    MOV  BL, 09h        ; Blue for Shield
+    MOV  AX, 133        ; X position
+    MOV  DX, 2          ; Y position
     CALL DrawBlock5x9
 Skip_P1S:
 
+    ; --- Player 2 indicators ---
     CMP  P2Ultra, 1
     JNE  Skip_P2U
-    MOV  BL, 0Eh
-    MOV  AX, 183        
+    MOV  BL, 0Eh        ; Yellow for Ultra
+    MOV  AX, 183        ; X position
+    MOV  DX, 2          ; Y position
     CALL DrawBlock5x9
 Skip_P2U:
 
     CMP  P2Shield, 1
     JNE  Skip_P2S
-    MOV  BL, 09h
-    MOV  AX, 189        
+    MOV  BL, 09h        ; Blue for Shield
+    MOV  AX, 189        ; X position
+    MOV  DX, 2          ; Y position
     CALL DrawBlock5x9
 Skip_P2S:
 
@@ -418,27 +426,42 @@ Skip_P2S:
     RET
 DrawPowerupUI ENDP
 
+; -------------------------------------------------------------------
+; DrawBlock5x9
+;   Draws a 5-wide x 9-tall filled color block.
+;   AX = X position (passed by caller)
+;   DX = Y position (passed by caller)
+;   BL = color
+;
+;   FIX: Color saved to DB59_Color and X saved to DB59_X so that
+;        MOV AL, BL never corrupts the X coordinate in AX across rows.
+; -------------------------------------------------------------------
 DrawBlock5x9 PROC NEAR
     PUSH AX
+    PUSH BX
     PUSH CX
     PUSH DX
     PUSH DI
-    MOV  DX, 2
-    MOV  CX, 9
+
+    MOV  DB59_Color, BL  ; save color — keeps BL from corrupting AX
+    MOV  DB59_X,     AX  ; save X    — reloaded fresh each row
+
+    MOV  CX, 9           ; 9 rows
 DB59_Row:
     PUSH CX
-    PUSH AX
-    CALL CalcDI
-    POP  AX
-    MOV  CX, 5
-    MOV  AL, BL
-    REP  STOSB
-    INC  DX
+    MOV  AX, DB59_X      ; reload clean X every row (not corrupted by MOV AL,BL)
+    CALL CalcDI          ; AX=X, DX=Y → DI = correct pixel offset
+    MOV  CX, 5           ; 5 pixels wide
+    MOV  AL, DB59_Color  ; color byte (AL only — AX no longer needed this row)
+    REP  STOSB           ; paint 5 pixels
+    INC  DX              ; advance Y to next row
     POP  CX
     LOOP DB59_Row
+
     POP  DI
     POP  DX
     POP  CX
+    POP  BX
     POP  AX
     RET
 DrawBlock5x9 ENDP
@@ -446,10 +469,10 @@ DrawBlock5x9 ENDP
 CalcDI PROC NEAR
     PUSH DX
     MOV  DI, DX
-    SHL  DI, 8      
-    SHL  DX, 6      
-    ADD  DI, DX     
-    ADD  DI, AX     
+    SHL  DI, 8
+    SHL  DX, 6
+    ADD  DI, DX
+    ADD  DI, AX
     POP  DX
     RET
 CalcDI ENDP
