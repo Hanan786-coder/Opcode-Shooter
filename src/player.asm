@@ -10,11 +10,9 @@ EXTRN TILE_H       : ABS
 EXTRN MoveLeft     : BYTE         
 EXTRN MoveRight    : BYTE         
 EXTRN DoJump       : BYTE         
-EXTRN MoveDown     : BYTE         
 EXTRN MoveLeft2    : BYTE         
 EXTRN MoveRight2   : BYTE         
 EXTRN DoJump2      : BYTE         
-EXTRN MoveDown2    : BYTE         
 EXTRN FirePlayer1  : BYTE         
 EXTRN FirePlayer2  : BYTE         
 EXTRN VideoSeg     : WORD         
@@ -584,18 +582,6 @@ CheckGroundCollision PROC NEAR
     MOV  AL, MapData[SI]
     CMP  AL, 1
     JNE  NoGroundHit2             
-    CMP  MoveDown, 1
-    JNE  CheckHit1
-    MOV  DX, MAP_ROWS
-    DEC  DX
-    CMP  CX, DX
-    JGE  CheckHit1
-    MOV  AX, PlayerY
-    ADD  AX, 17
-    MOV  PlayerY, AX
-    MOV  VelocityY, 2
-    JMP  NoGroundHit2
-CheckHit1:
     MOV  AX, PlayerY
     ADD  AX, PLAYER_H
     XOR  DX, DX
@@ -920,18 +906,6 @@ CheckGroundCollision_P2 PROC NEAR
     MOV  AL, MapData[SI]
     CMP  AL, 1
     JNE  NoGroundHit2_P2             
-    CMP  MoveDown2, 1
-    JNE  CheckHit2
-    MOV  DX, MAP_ROWS
-    DEC  DX
-    CMP  CX, DX
-    JGE  CheckHit2
-    MOV  AX, Player2Y
-    ADD  AX, 17
-    MOV  Player2Y, AX
-    MOV  Velocity2Y, 2
-    JMP  NoGroundHit2_P2
-CheckHit2:
     MOV  AX, Player2Y
     ADD  AX, PLAYER_H
     XOR  DX, DX
