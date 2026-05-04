@@ -128,8 +128,9 @@ UpdatePowerups PROC NEAR
 
     DEC  SpawnTimer
     CMP  SpawnTimer, 0
-    JG   CheckCol
-    MOV  SpawnTimer, SPAWN_INTERVAL
+    JLE  SkipJump    ; If NOT Greater (Less or Equal), skip the jump
+        JMP  CheckCol    ; Unconditional jump (can reach much further)
+    SkipJump:    MOV  SpawnTimer, SPAWN_INTERVAL
     XOR  BX, BX
 FindFree:
     CMP  BX, MAX_POWERUPS
