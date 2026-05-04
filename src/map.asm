@@ -707,18 +707,18 @@ SM_DrawPanel PROC NEAR
 
     MOV  BP, AX             ; BP = panel left x
 
-    ; ---- 1. Fill panel background ----
-    MOV  DI, PANEL_Y        ; DI used as row y counter
+; ---- 1. Fill panel background ----
+    MOV  SM_CurY, PANEL_Y   ; use SM_CurY as row counter instead of DI
     MOV  CX, PANEL_H
 SDP2_FillRow:
     PUSH CX
     MOV  AX, BP
-    MOV  DX, DI
-    CALL SM_CalcDI
+    MOV  DX, SM_CurY        ; DX = current row (clean row index)
+    CALL SM_CalcDI          ; DI = correct pixel offset, SM_CurY untouched
     MOV  CX, PANEL_W
     MOV  AL, BL
-    REP  STOSB
-    INC  DI
+    REP  STOSB              ; fills one row correctly
+    INC  SM_CurY            ; advance row counter safely
     POP  CX
     LOOP SDP2_FillRow
 
