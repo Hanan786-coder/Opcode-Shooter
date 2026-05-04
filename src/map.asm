@@ -41,7 +41,7 @@ GROUNDCOLOR DB 02h
 MAPINDEX    DB 1
 
 COLOR_SKY1  EQU 01h
-COLOR_SKY2  EQU 08h
+COLOR_SKY2  EQU 03h
 COLOR_SKY3  EQU 05h      ; dark magenta (valid EGA palette index)
 
 ; ------ Panel geometry (3 panels x 96px wide, gap 10, margin 6) ---

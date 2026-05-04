@@ -13,6 +13,7 @@ EXTRN P1Shield : BYTE
 EXTRN P2Shield : BYTE
 EXTRN P1Ultra : BYTE
 EXTRN P2Ultra : BYTE
+EXTRN MapData : BYTE
 EXTRN VideoSeg : WORD
 
 PUBLIC InitPowerups
@@ -138,6 +139,7 @@ FindFree:
     INC  BX
     JMP  FindFree
 SpawnSlot:
+RetrySpawn:
     MOV  PwrActive[BX], 1
     PUSH BX
     MOV  BX, 3
@@ -161,6 +163,34 @@ SpawnSlot:
     MOV  SI, BX
     SHL  SI, 1
     MOV  PwrY[SI], AX
+
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    MOV  AX, PwrY[SI]
+    ADD  AX, 4             ; Center Y
+    XOR  DX, DX
+    MOV  CX, 16      
+    DIV  CX
+    MOV  BX, AX            ; BX = Row
+    MOV  AX, PwrX[SI]
+    ADD  AX, 4             ; Center X
+    XOR  DX, DX
+    DIV  CX                ; AX = Col
+    MOV  CX, AX            ; CX = Col
+    MOV  AX, BX
+    MOV  DX, 20      
+    MUL  DX                ; Row * 20
+    ADD  AX, CX            ; + Col
+    MOV  DI, AX
+    MOV  AL, MapData[DI]
+    CMP  AL, 1
+    POP  DX
+    POP  CX
+    POP  BX
+    POP  AX
+    JE   RetrySpawn
 
 CheckCol:
     XOR  BX, BX
